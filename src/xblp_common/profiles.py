@@ -83,18 +83,14 @@ class Profile(BaseModel):
     @classmethod
     def _valid_id(cls, v: str) -> str:
         if not _ID_RE.match(v):
-            raise ValueError(
-                f"profile id must match ^[a-z][a-z0-9-]*$, got {v!r}"
-            )
+            raise ValueError(f"profile id must match ^[a-z][a-z0-9-]*$, got {v!r}")
         return v
 
     @field_validator("confidence")
     @classmethod
     def _valid_confidence(cls, v: str) -> str:
         if v not in _VALID_CONFIDENCE:
-            raise ValueError(
-                f"confidence must be one of {sorted(_VALID_CONFIDENCE)}, got {v!r}"
-            )
+            raise ValueError(f"confidence must be one of {sorted(_VALID_CONFIDENCE)}, got {v!r}")
         return v
 
 
