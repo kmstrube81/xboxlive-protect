@@ -1,0 +1,20 @@
+id: halo3-x360
+name: "Halo 3 (Xbox 360)"
+console: xbox-360
+confidence: community-validated
+maintainer: "xboxlive-protect maintainers"
+last_validated: "2026-05-06"
+description: >
+  Detects peer-to-peer lobby hosts in Halo 3 on Xbox 360.
+  Thresholds are tuned conservatively because Halo 3 traffic is lower-volume than MW2.
+
+detection:
+  transport: udp
+  port_ranges:
+    - {min: 1000, max: 65535}
+  min_pps: 25
+  window_seconds: 10
+  min_consecutive_windows: 3
+
+exclude_ranges: []
+payload_signatures: []

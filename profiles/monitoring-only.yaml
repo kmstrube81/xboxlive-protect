@@ -1,0 +1,23 @@
+id: monitoring-only
+name: "Monitoring Only (No Detection)"
+console: xbox-360
+confidence: tested
+maintainer: "xboxlive-protect maintainers"
+last_validated: "2026-05-06"
+description: >
+  Passthrough profile — shows raw peer traffic in the UI without scoring or flagging
+  any host as a likely lobby leader. Use this for debugging or when you want to
+  observe traffic without acting on it.
+
+detection:
+  transport: udp
+  port_ranges:
+    - {min: 1000, max: 65535}
+  # min_pps is set astronomically high so no peer ever meets the threshold.
+  # This makes the detection block structurally valid while remaining completely inert.
+  min_pps: 999999
+  window_seconds: 10
+  min_consecutive_windows: 3
+
+exclude_ranges: []
+payload_signatures: []

@@ -1,0 +1,22 @@
+id: generic-p2p
+name: "Generic P2P (Fallback)"
+console: xbox-360
+confidence: tested
+maintainer: "xboxlive-protect maintainers"
+last_validated: "2026-05-06"
+description: >
+  Top-talker fallback for any P2P Xbox 360 game that does not have a dedicated profile.
+  Uses the same thresholds as MW2 — broad port range, moderate pps — to surface the
+  highest-traffic peer regardless of game. Add a game-specific profile when more
+  precision is needed.
+
+detection:
+  transport: udp
+  port_ranges:
+    - {min: 1000, max: 65535}
+  min_pps: 30
+  window_seconds: 10
+  min_consecutive_windows: 3
+
+exclude_ranges: []
+payload_signatures: []

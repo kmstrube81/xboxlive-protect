@@ -1,0 +1,20 @@
+id: mw2-x360
+name: "Modern Warfare 2 (Xbox 360)"
+console: xbox-360
+confidence: tested
+maintainer: "xboxlive-protect maintainers"
+last_validated: "2026-05-06"
+description: >
+  Detects peer-to-peer lobby hosts in Modern Warfare 2 on Xbox 360.
+  Primary use case for this appliance — modded lobbies in free-for-all and team deathmatch.
+
+detection:
+  transport: udp
+  port_ranges:
+    - {min: 1000, max: 65535}
+  min_pps: 30
+  window_seconds: 10
+  min_consecutive_windows: 3
+
+exclude_ranges: []
+payload_signatures: []
