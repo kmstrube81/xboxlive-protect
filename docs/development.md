@@ -42,6 +42,59 @@ export XBLP_DB_PATH=./dev.db
 
 The file is created automatically on first run. Add `dev.db` to your local `.git/info/exclude` if you do not want to commit it. The repo's `.gitignore` does not track it.
 
+## Running integration tests
+
+Integration tests exercise real system calls against kernel subsystems. They
+are automatically skipped on non-Linux platforms, when the required binary is
+absent, or when not running as root.
+
+```bash
+# Integration tests require Linux + root + the nft binary
+sudo pytest -m integration -v
+```
+
+To run both unit and integration tests in one pass (on Linux as root):
+
+```bash
+sudo pytest -m "unit or integration" -v
+```
+
+The integration test suite uses the table name `xblp_test` instead of `xblp`,
+so it is safe to run on a machine with a live production install — the two
+tables are completely independent.
+
+**Do not** run `pytest -m integration` on a system where you cannot afford
+even transient nftables state, since the tests create and destroy a real
+kernel table.
+
+## Working on Linux-specific code from Windows
+
+Some modules (`nft.py`, future network code) wrap Linux-only tools. The
+development pattern is:
+
+1. **Write and unit-test on Windows.** Unit tests mock all subprocess calls
+   and run fully cross-platform. This is the fast inner loop.
+
+2. **Push to a branch:**
+   ```bash
+   git push origin <branch-name>
+   ```
+
+3. **Pull and run integration tests on the R4S (or any Debian 12 host):**
+   ```bash
+   git pull
+   pip install -e ".[dev]"
+   sudo pytest -m integration -v
+   ```
+
+4. **Fix issues found on hardware, commit, push back.**
+
+Aim to make unit tests thorough enough that integration test failures are
+surprises rather than first-time discoveries. The structural invariant tests
+in `test_nft.py` (allowlist ordering, set flags, chain priority) are
+specifically designed to catch template regressions before they reach
+hardware testing.
+
 ## Gotchas
 
 ### SQLite foreign key enforcement requires PRAGMA foreign_keys=ON
