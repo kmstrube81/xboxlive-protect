@@ -13,11 +13,11 @@ Intended call sites (Stage 4+):
 - After promoting a subscription rule to local
 
 ``reconcile_blocklist`` is the only function that should call
-``nft.add_to_blocklist`` or ``nft.remove_from_blocklist``.  Direct calls to
-those from elsewhere in the codebase will fight with the diff calculation here
-and produce nft state thrash.  The nft manager exposes them as public methods
-only because reconcile.py needs them — treat them as effectively private to
-this module.
+``nft.apply_diff``.  Direct calls to ``add_to_blocklist`` or
+``remove_from_blocklist`` from elsewhere in the codebase will fight with the
+diff calculation here and produce nft state thrash.  The nft manager exposes
+those methods as public only because integration tests exercise them directly —
+treat them as effectively private to this module for application code.
 """
 
 from __future__ import annotations
@@ -37,24 +37,35 @@ log = structlog.get_logger(__name__)
 
 class _BlocklistManager(Protocol):
     def list_blocklist(self) -> list[tuple[str, int]]: ...
-    def add_to_blocklist(self, ip: str, cidr: int = 32) -> None: ...
-    def remove_from_blocklist(self, ip: str, cidr: int = 32) -> None: ...
+    def apply_diff(
+        self,
+        table_set: str,
+        to_add: list[tuple[str, int]],
+        to_remove: list[tuple[str, int]],
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
 class ReconcileResult:
+    """Snapshot of what ``reconcile_blocklist`` wrote to the nft set.
+
+    ``added`` and ``removed`` reflect entries actually written to the kernel
+    set, not raw DB rows.  Overlapping DB entries are collapsed before the
+    diff, so these lists may be smaller than the corresponding DB rule count.
+    """
+
     added: list[tuple[str, int]]
     removed: list[tuple[str, int]]
     duration_ms: float
 
 
 def reconcile_blocklist(session: Session, nft: _BlocklistManager) -> ReconcileResult:
-    """Diff DB rules against the live nft blocklist and apply the delta.
+    """Diff DB rules against the live nft blocklist and apply the delta atomically.
 
     Reads nft state first: if that call raises, the function propagates the
-    error without making any partial writes.  Overlapping DB entries are
-    collapsed via :func:`~xblp_common.nft._collapse_entries` before diffing,
-    matching the same normalisation applied to allowlist writes.
+    error without making any writes.  Overlapping DB entries are collapsed via
+    :func:`~xblp_common.nft._collapse_entries` before diffing, matching the
+    same normalisation applied to allowlist writes.
     """
     t0 = time.monotonic()
     current: set[tuple[str, int]] = set(nft.list_blocklist())
@@ -67,10 +78,7 @@ def reconcile_blocklist(session: Session, nft: _BlocklistManager) -> ReconcileRe
     to_add: list[tuple[str, int]] = sorted(desired - current)
     to_remove: list[tuple[str, int]] = sorted(current - desired)
 
-    for ip, cidr in to_add:
-        nft.add_to_blocklist(ip, cidr)
-    for ip, cidr in to_remove:
-        nft.remove_from_blocklist(ip, cidr)
+    nft.apply_diff("blocklist", to_add, to_remove)
 
     duration_ms = (time.monotonic() - t0) * 1000
     result = ReconcileResult(added=to_add, removed=to_remove, duration_ms=duration_ms)

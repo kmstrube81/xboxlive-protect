@@ -72,14 +72,14 @@ def mgr() -> NftManager:  # type: ignore[return]  # yield in try/finally
 
 
 def test_reconcile_adds_db_rules_to_empty_blocklist(mgr: NftManager, db_session):  # type: ignore[no-untyped-def]
+    # /32 is inside the /24 — collapse reduces both DB rows to just the /24
     db_session.add(_make_rule("192.0.2.1"))
     db_session.add(_make_rule("192.0.2.0", 24))
     db_session.flush()
     result = reconcile_blocklist(db_session, mgr)
-    assert set(result.added) == {("192.0.2.1", 32), ("192.0.2.0", 24)}
-    live = mgr.list_blocklist()
-    assert ("192.0.2.1", 32) in live
-    assert ("192.0.2.0", 24) in live
+    assert set(result.added) == {("192.0.2.0", 24)}
+    assert result.removed == []
+    assert ("192.0.2.0", 24) in mgr.list_blocklist()
 
 
 def test_reconcile_idempotent(mgr: NftManager, db_session):  # type: ignore[no-untyped-def]

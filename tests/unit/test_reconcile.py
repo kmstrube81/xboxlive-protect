@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import UTC, datetime
 
 import pytest
@@ -24,7 +25,13 @@ def _make_rule(ip: str, cidr: int = 32, source: str = "local") -> Rule:
 
 
 class _MockNft:
-    """In-process stub that mutates its own state so successive list calls reflect prior ops."""
+    """In-process stub that enforces nftables interval-overlap semantics.
+
+    Maintains a list representing kernel set state.  apply_diff simulates the
+    atomic transaction: removes are applied to a scratch copy first, then adds
+    are validated against that post-remove state before any mutation is
+    committed.  Raises NftError on overlap, matching real nft behaviour.
+    """
 
     def __init__(self, current: list[tuple[str, int]] | None = None) -> None:
         self._current: list[tuple[str, int]] = list(current or [])
@@ -32,32 +39,62 @@ class _MockNft:
         self.removed: list[tuple[str, int]] = []
 
     def list_blocklist(self) -> list[tuple[str, int]]:
-        return list(self._current)
+        return sorted(self._current)
 
     def add_to_blocklist(self, ip: str, cidr: int = 32) -> None:
+        new_net = ipaddress.IPv4Network(f"{ip}/{cidr}")
+        for eip, ecidr in self._current:
+            if new_net.overlaps(ipaddress.IPv4Network(f"{eip}/{ecidr}")):
+                raise NftError(f"interval overlaps with an existing one: {ip}/{cidr}")
         self.added.append((ip, cidr))
         self._current.append((ip, cidr))
 
     def remove_from_blocklist(self, ip: str, cidr: int = 32) -> None:
-        self.removed.append((ip, cidr))
-        self._current = [(i, c) for i, c in self._current if (i, c) != (ip, cidr)]
+        entry = (ip, cidr)
+        if entry not in self._current:
+            raise NftError(f"element not found: {ip}/{cidr}")
+        self.removed.append(entry)
+        self._current = [e for e in self._current if e != entry]
+
+    def apply_diff(
+        self,
+        table_set: str,
+        to_add: list[tuple[str, int]],
+        to_remove: list[tuple[str, int]],
+    ) -> None:
+        if not to_add and not to_remove:
+            return
+        # Simulate atomic transaction: validate against post-remove state
+        post_remove = [e for e in self._current if e not in to_remove]
+        for ip, cidr in to_add:
+            new_net = ipaddress.IPv4Network(f"{ip}/{cidr}")
+            for eip, ecidr in post_remove:
+                if new_net.overlaps(ipaddress.IPv4Network(f"{eip}/{ecidr}")):
+                    raise NftError(f"interval overlaps with an existing one: {ip}/{cidr}")
+        # Commit
+        self._current = post_remove
+        for ip, cidr in to_add:
+            self._current.append((ip, cidr))
+        self.added.extend(to_add)
+        self.removed.extend(to_remove)
 
 
 class _FailingNft:
-    """Stub whose list_blocklist always raises, tracking whether add/remove are called."""
+    """Stub whose list_blocklist always raises; tracks whether apply_diff is called."""
 
     def __init__(self) -> None:
-        self.add_calls: int = 0
-        self.remove_calls: int = 0
+        self.apply_diff_calls: int = 0
 
     def list_blocklist(self) -> list[tuple[str, int]]:
         raise NftError("ruleset not present")
 
-    def add_to_blocklist(self, ip: str, cidr: int = 32) -> None:
-        self.add_calls += 1
-
-    def remove_from_blocklist(self, ip: str, cidr: int = 32) -> None:
-        self.remove_calls += 1
+    def apply_diff(
+        self,
+        table_set: str,
+        to_add: list[tuple[str, int]],
+        to_remove: list[tuple[str, int]],
+    ) -> None:
+        self.apply_diff_calls += 1
 
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
@@ -129,7 +166,7 @@ def test_unsubscribe_resurfaces_local_rule(db_session: Session) -> None:
 
     nft = _MockNft()
     reconcile_blocklist(db_session, nft)
-    assert nft._current == [("203.0.113.0", 24)]
+    assert sorted(nft._current) == [("203.0.113.0", 24)]
 
     db_session.delete(sub_rule)
     db_session.flush()
@@ -137,7 +174,7 @@ def test_unsubscribe_resurfaces_local_rule(db_session: Session) -> None:
     result = reconcile_blocklist(db_session, nft)
     assert result.added == [("203.0.113.4", 32)]
     assert result.removed == [("203.0.113.0", 24)]
-    assert nft._current == [("203.0.113.4", 32)]
+    assert sorted(nft._current) == [("203.0.113.4", 32)]
 
 
 def test_result_reflects_applied_changes(db_session: Session) -> None:
@@ -160,5 +197,4 @@ def test_list_blocklist_error_propagates_no_partial_writes(db_session: Session) 
     nft = _FailingNft()
     with pytest.raises(NftError):
         reconcile_blocklist(db_session, nft)
-    assert nft.add_calls == 0
-    assert nft.remove_calls == 0
+    assert nft.apply_diff_calls == 0
