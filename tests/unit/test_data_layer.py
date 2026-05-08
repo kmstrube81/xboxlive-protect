@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from xblp_common.models import AuditLog, DetectedHost, EventType, Rule, Subscription
 
+pytestmark = pytest.mark.unit
+
 
 def _now() -> datetime:
     """Naive UTC datetime for use with SQLite DateTime columns."""

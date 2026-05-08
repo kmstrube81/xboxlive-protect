@@ -8,6 +8,8 @@ import yaml
 
 from xblp_common.profiles import Profile, ProfileLoadError, discover_profiles, load_profile
 
+pytestmark = pytest.mark.unit
+
 # Path to the checked-in profiles directory (relative to repo root)
 PROFILES_DIR = Path(__file__).parent.parent.parent / "profiles"
 

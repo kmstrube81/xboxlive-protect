@@ -79,3 +79,9 @@ disallow_incomplete_defs = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-m unit"
+markers = [
+    "unit: fast, no external dependencies",
+    "integration: require Linux, root, and the nft binary (run with: pytest -m integration)",
+    "linux: tests that only run on Linux",
+]
