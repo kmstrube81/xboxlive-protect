@@ -117,3 +117,15 @@ event.listen(engine, "connect", _enable_foreign_keys)
 ```
 
 Do not bypass `db.create_engine()` in application code. Do not omit the listener in test fixtures that test cascade behaviour.
+
+### nftables blocklist state is owned by `reconcile_blocklist`
+
+`NftManager.add_to_blocklist` and `remove_from_blocklist` are public methods, but they should be treated as private to `xblp_common.reconcile`.  Only `reconcile_blocklist` should call them.
+
+The reconciler diffs DB rules against live nft state and applies the minimal delta.  If other code calls the add/remove methods directly, it will fight with the diff and produce state thrash — entries may be re-added or removed on the next reconcile in ways that don't match the DB.
+
+`reconcile_blocklist` also collapses overlapping DB entries via `_collapse_entries` before diffing.  This is required because nftables sets with `flags interval` reject overlapping CIDRs at the kernel level.  A subscription that covers a /24 will absorb any /32 entries inside it, collapsing them to a single kernel entry.  When that subscription is removed, the next reconcile will detect the difference and restore the narrower entry automatically — but only if all blocklist writes go through the reconciler.
+
+### `_collapse_entries` normalises host-bit-set addresses
+
+`ipaddress.IPv4Network` is called with `strict=False` inside `_collapse_entries`, which normalises host-bit-set addresses like `1.2.3.4/24` to their network address `1.2.3.0/24` before collapsing.  This means the `(ip, cidr)` tuples stored in `ReconcileResult.added` and returned by `list_blocklist` may differ from the raw strings in the DB if the DB contains un-normalised entries.
