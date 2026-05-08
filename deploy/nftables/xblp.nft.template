@@ -1,0 +1,26 @@
+# xboxlive-protect nftables ruleset — applied by xblp-capture on startup.
+# See DESIGN.md §4.3 for the full specification.
+#
+# Safety invariant: xbl_allowlist is checked before blocklist.
+# Microsoft Xbox Live infrastructure IPs can never be blocked regardless
+# of what rules the user or a subscription contributes.
+
+table inet {table} {
+    set blocklist {
+        type ipv4_addr
+        flags interval
+    }
+
+    set xbl_allowlist {
+        type ipv4_addr
+        flags interval
+    }
+
+    chain forward {
+        type filter hook forward priority 0;
+        ip saddr @xbl_allowlist accept
+        ip daddr @xbl_allowlist accept
+        ip saddr @blocklist drop
+        ip daddr @blocklist drop
+    }
+}
