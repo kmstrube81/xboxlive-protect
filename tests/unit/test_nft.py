@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from xblp_common.nft import NftError, NftManager, _parse_set_elements
+from xblp_common.nft import NftError, NftManager, _collapse_entries, _parse_set_elements
 
 pytestmark = pytest.mark.unit
 
@@ -423,3 +423,44 @@ def test_chain_checks_allowlist_before_blocklist() -> None:
         "Allowlist accept rules must precede blocklist drop rules. "
         "If reversed, a subscription could block Microsoft IPs."
     )
+
+
+# ── _collapse_entries unit tests ──────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_collapse_entries_empty() -> None:
+    assert _collapse_entries([]) == []
+
+
+@pytest.mark.unit
+def test_collapse_entries_single_host_passthrough() -> None:
+    assert _collapse_entries([("1.2.3.4", 32)]) == [("1.2.3.4", 32)]
+
+
+@pytest.mark.unit
+def test_collapse_entries_non_overlapping_passthrough() -> None:
+    result = _collapse_entries([("1.2.3.4", 32), ("5.6.7.8", 32)])
+    assert set(result) == {("1.2.3.4", 32), ("5.6.7.8", 32)}
+
+
+@pytest.mark.unit
+def test_collapse_entries_host_inside_cidr_absorbed() -> None:
+    """A /32 contained in a /24 collapses to just the /24."""
+    result = _collapse_entries([("203.0.113.4", 32), ("203.0.113.0", 24)])
+    assert result == [("203.0.113.0", 24)]
+
+
+@pytest.mark.unit
+def test_collapse_entries_adjacent_slash25s_merge_to_slash24() -> None:
+    """Two adjacent /25s that together fill a /24 are merged into that /24."""
+    result = _collapse_entries([("10.0.0.0", 25), ("10.0.0.128", 25)])
+    assert result == [("10.0.0.0", 24)]
+
+
+@pytest.mark.unit
+def test_collapse_entries_multiple_overlapping() -> None:
+    """A /32 and a /25 that are both subsets of a /24 all collapse to the /24."""
+    entries = [("192.0.2.0", 24), ("192.0.2.1", 32), ("192.0.2.128", 25)]
+    result = _collapse_entries(entries)
+    assert result == [("192.0.2.0", 24)]

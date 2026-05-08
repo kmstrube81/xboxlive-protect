@@ -11,6 +11,7 @@ subprocess without a shell.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 import subprocess
@@ -24,10 +25,7 @@ log = structlog.get_logger(__name__)
 _DEFAULT_NFT_BIN = "/usr/sbin/nft"
 _DEFAULT_TABLE = "xblp"
 _TEMPLATE_PATH = (
-    Path(__file__).resolve().parent.parent.parent
-    / "deploy"
-    / "nftables"
-    / "xblp.nft.template"
+    Path(__file__).resolve().parent.parent.parent / "deploy" / "nftables" / "xblp.nft.template"
 )
 
 
@@ -142,17 +140,38 @@ class NftManager:
     def replace_allowlist(self, entries: list[tuple[str, int]]) -> None:
         """Replace the entire allowlist via a single ``nft -f`` call.
 
+        Overlapping entries are collapsed via :func:`_collapse_entries` before
+        being applied — nftables sets with ``flags interval`` reject overlapping
+        elements at the kernel level.
+
         Applies ``flush set`` followed by ``add element`` in one script file.
         Not a true kernel transaction — a process crash between the two
         operations would leave the set empty — but it is the best available
         without libnftables bindings.
         """
+        entries = _collapse_entries(entries)
         lines = [f"flush set inet {self.table} xbl_allowlist"]
         if entries:
             elems = ", ".join(f"{ip}/{cidr}" for ip, cidr in entries)
             lines.append(f"add element inet {self.table} xbl_allowlist {{ {elems} }}")
         self._run_script("\n".join(lines) + "\n")
         self._log.info("allowlist replaced", count=len(entries))
+
+
+def _collapse_entries(entries: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """Merge overlapping and adjacent CIDRs into a minimal non-overlapping set.
+
+    Required before passing entries to nftables sets with ``flags interval``:
+    the kernel rejects duplicate or overlapping elements at insert time.
+    Uses ``strict=False`` so host addresses like ``1.2.3.4/24`` are normalised
+    to their network address (``1.2.3.0/24``) before collapsing.
+    """
+    if not entries:
+        return []
+    networks = [ipaddress.IPv4Network(f"{ip}/{cidr}", strict=False) for ip, cidr in entries]
+    return [
+        (str(net.network_address), net.prefixlen) for net in ipaddress.collapse_addresses(networks)
+    ]
 
 
 def _parse_set_elements(output: str) -> list[tuple[str, int]]:

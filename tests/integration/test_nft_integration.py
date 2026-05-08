@@ -118,9 +118,16 @@ def test_allowlist_add_and_list(mgr: NftManager) -> None:
 
 def test_allowlist_replace_atomic(mgr: NftManager) -> None:
     mgr.apply_initial_ruleset()
-    entries = [("198.51.100.1", 32), ("198.51.100.0", 24)]
-    mgr.replace_allowlist(entries)
-    assert set(mgr.list_allowlist()) == set(entries)
+    # Overlapping entries: /32 is inside /24; replace_allowlist collapses to just the /24
+    mgr.replace_allowlist([("198.51.100.1", 32), ("198.51.100.0", 24)])
+    assert mgr.list_allowlist() == [("198.51.100.0", 24)]
+
+
+def test_allowlist_replace_collapses_overlapping(mgr: NftManager) -> None:
+    mgr.apply_initial_ruleset()
+    # /26 and /25 are both subnets of the /24; all three collapse to the /24
+    mgr.replace_allowlist([("198.51.100.0", 24), ("198.51.100.64", 26), ("198.51.100.128", 25)])
+    assert mgr.list_allowlist() == [("198.51.100.0", 24)]
 
 
 def test_allowlist_replace_empty(mgr: NftManager) -> None:
