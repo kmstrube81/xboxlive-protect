@@ -123,6 +123,36 @@ class NftManager:
         output = self._run(["list", "set", "inet", self.table, "blocklist"])
         return _parse_set_elements(output)
 
+    def apply_diff(
+        self,
+        table_set: str,
+        to_add: list[tuple[str, int]],
+        to_remove: list[tuple[str, int]],
+    ) -> None:
+        """Apply a set diff as a single atomic ``nft -f`` transaction.
+
+        Removes are written before adds so that a broader-to-narrower transition
+        (e.g. /24 → /32) succeeds: the /24 must leave the set before the /32
+        can be inserted without triggering the kernel's interval-overlap check.
+        No-op if both lists are empty.
+        """
+        if not to_add and not to_remove:
+            return
+        lines: list[str] = []
+        if to_remove:
+            elems = ", ".join(f"{ip}/{cidr}" for ip, cidr in to_remove)
+            lines.append(f"delete element inet {self.table} {table_set} {{ {elems} }}")
+        if to_add:
+            elems = ", ".join(f"{ip}/{cidr}" for ip, cidr in to_add)
+            lines.append(f"add element inet {self.table} {table_set} {{ {elems} }}")
+        self._run_script("\n".join(lines) + "\n")
+        self._log.debug(
+            "diff applied",
+            table_set=table_set,
+            added=len(to_add),
+            removed=len(to_remove),
+        )
+
     # ── Allowlist ─────────────────────────────────────────────────────────────
 
     def add_to_allowlist(self, ip: str, cidr: int = 32) -> None:

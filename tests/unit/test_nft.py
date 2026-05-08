@@ -464,3 +464,68 @@ def test_collapse_entries_multiple_overlapping() -> None:
     entries = [("192.0.2.0", 24), ("192.0.2.1", 32), ("192.0.2.128", 25)]
     result = _collapse_entries(entries)
     assert result == [("192.0.2.0", 24)]
+
+
+# ── apply_diff unit tests ─────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_apply_diff_noop_when_both_empty(mgr: NftManager) -> None:
+    stub = _RunStub()
+    with patch("xblp_common.nft.subprocess.run", stub):
+        mgr.apply_diff("blocklist", [], [])
+    assert stub.scripts == []
+    assert stub.cmds == []
+
+
+@pytest.mark.unit
+def test_apply_diff_adds_only(mgr: NftManager) -> None:
+    stub = _RunStub()
+    with patch("xblp_common.nft.subprocess.run", stub):
+        mgr.apply_diff("blocklist", [("1.2.3.4", 32)], [])
+    assert len(stub.scripts) == 1
+    assert "add element inet xblp blocklist" in stub.scripts[0]
+    assert "1.2.3.4/32" in stub.scripts[0]
+    assert "delete element" not in stub.scripts[0]
+
+
+@pytest.mark.unit
+def test_apply_diff_removes_only(mgr: NftManager) -> None:
+    stub = _RunStub()
+    with patch("xblp_common.nft.subprocess.run", stub):
+        mgr.apply_diff("blocklist", [], [("1.2.3.0", 24)])
+    assert len(stub.scripts) == 1
+    assert "delete element inet xblp blocklist" in stub.scripts[0]
+    assert "1.2.3.0/24" in stub.scripts[0]
+    assert "add element" not in stub.scripts[0]
+
+
+@pytest.mark.unit
+def test_apply_diff_removes_before_adds_in_script(mgr: NftManager) -> None:
+    """delete element must precede add element so the /24 is gone before the /32 is inserted."""
+    stub = _RunStub()
+    with patch("xblp_common.nft.subprocess.run", stub):
+        mgr.apply_diff("blocklist", [("203.0.113.4", 32)], [("203.0.113.0", 24)])
+    script = stub.scripts[0]
+    delete_pos = script.find("delete element")
+    add_pos = script.find("add element")
+    assert delete_pos != -1 and add_pos != -1
+    assert delete_pos < add_pos, "delete element must appear before add element in the script"
+
+
+@pytest.mark.unit
+def test_apply_diff_single_script_call(mgr: NftManager) -> None:
+    """Both adds and removes are batched into exactly one nft -f invocation."""
+    stub = _RunStub()
+    with patch("xblp_common.nft.subprocess.run", stub):
+        mgr.apply_diff("blocklist", [("10.0.0.1", 32), ("10.0.0.2", 32)], [("10.0.0.3", 32)])
+    assert len(stub.scripts) == 1
+
+
+@pytest.mark.unit
+def test_apply_diff_uses_table_set_name(mgr: NftManager) -> None:
+    stub = _RunStub()
+    with patch("xblp_common.nft.subprocess.run", stub):
+        mgr.apply_diff("xbl_allowlist", [("10.0.0.1", 32)], [])
+    assert "xbl_allowlist" in stub.scripts[0]
+    assert "blocklist" not in stub.scripts[0]
