@@ -95,6 +95,47 @@ in `test_nft.py` (allowlist ordering, set flags, chain priority) are
 specifically designed to catch template regressions before they reach
 hardware testing.
 
+## Capture daemon manual testing
+
+`python -m xblp_capture` is a development tool that wires `live_capture` →
+`PeerScorer` and prints results without touching the database.  Use it during
+a real MW2 session on the R4S to validate detection before wiring up the full
+daemon.
+
+**Requires:** Linux, root (or `CAP_NET_RAW`), and the package installed in
+an editable virtualenv.
+
+```bash
+# On the R4S, with the Xbox already on the network:
+sudo .venv/bin/python -m xblp_capture \
+    --interface br0 \
+    --xbox-ip 192.168.1.50 \
+    --profile mw2-x360
+```
+
+What you see:
+
+- **stdout** — `[DETECTED]` lines whenever a peer crosses the detection
+  threshold for the first time.  Each line shows the peer IP, score, and
+  how long it has been qualifying.
+- **stderr** — a peer table every 5 seconds showing all observed peers,
+  their current packets/s, score, and qualified-window count.
+
+Flags:
+
+| Flag | Description |
+|---|---|
+| `--interface` | Bridge or NIC to sniff (e.g. `br0`, `eth0`) |
+| `--xbox-ip` | Xbox IP address on the LAN |
+| `--profile` | Profile ID (e.g. `mw2-x360`) or path to a YAML file |
+| `--profiles-dir` | Override the profiles directory (default: repo `profiles/`) |
+
+Stop with `Ctrl-C` — the sniffer shuts down cleanly.
+
+**What this does NOT do:** write to the database, apply blocks, or run as
+a long-lived daemon.  Those come in later stages.  This is purely for
+eyeballing whether the scorer sees the right peers during a live game.
+
 ## Gotchas
 
 ### SQLite foreign key enforcement requires PRAGMA foreign_keys=ON
