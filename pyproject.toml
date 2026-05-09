@@ -11,6 +11,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "pyyaml>=6.0",
     "structlog>=24.0",
+    "scapy>=2.5",
 ]
 
 [project.optional-dependencies]
@@ -73,6 +74,10 @@ plugins = ["sqlalchemy.ext.mypy.plugin"]
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = "scapy.*"
+ignore_missing_imports = true
 
 # ── Pytest ────────────────────────────────────────────────────────────────────
 
