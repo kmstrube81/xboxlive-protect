@@ -89,4 +89,5 @@ markers = [
     "unit: fast, no external dependencies",
     "integration: require Linux, root, and the nft binary (run with: pytest -m integration)",
     "linux: tests that only run on Linux",
+    "needs_device: require a physical device connected to the LAN (Xbox-facing) port",
 ]
