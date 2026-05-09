@@ -1,0 +1,23 @@
+[Unit]
+Description=xboxlive-protect bridge rollback safety net
+Documentation=file:///opt/xboxlive-protect/docs/troubleshooting.md
+
+# Run before ANY network initialisation. If bring-up-bridge.sh wrote a bad
+# br0.conf that hangs networking.service, this service still fires first and
+# restores the pre-bridge config before the broken config is attempted.
+DefaultDependencies=no
+After=local-fs.target
+Before=network-pre.target
+
+# Only activates when bring-up-bridge.sh has armed a bring-up that was not
+# yet confirmed. confirm-bridge.sh removes the sentinel, permanently disarming
+# this service for all future reboots.
+ConditionPathExists=/etc/xboxlive-protect/.bridge-pending
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/xboxlive-protect/rollback-bridge.sh --auto
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
