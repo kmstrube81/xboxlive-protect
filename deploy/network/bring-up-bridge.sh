@@ -343,6 +343,11 @@ warn "If you cannot reconnect within ${CONFIRM_MINUTES} minutes, the device will
 warn "reboot itself and restore the previous network configuration."
 hr
 
-nohup bash -c 'sleep 3 && systemctl restart networking' >/dev/null 2>&1 &
+nohup bash -c "sleep 3
+pkill -f 'dhclient.*${WAN_IFACE}' 2>/dev/null || true
+pkill -f 'dhclient.*${LAN_IFACE}' 2>/dev/null || true
+ip addr flush dev ${WAN_IFACE} 2>/dev/null || true
+ip addr flush dev ${LAN_IFACE} 2>/dev/null || true
+systemctl restart networking" >/dev/null 2>&1 &
 disown $!
 exit 0
