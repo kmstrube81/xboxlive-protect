@@ -85,11 +85,50 @@ def br0_ip() -> str:
 
 @pytest.fixture(scope="module")
 def has_connected_device() -> bool:
-    """True if a device is currently visible via ARP on br0 (LAN port populated)."""
-    rc, stdout, _ = _run(["ip", "neigh", "show", "dev", "br0"])
-    if rc != 0:
+    """True if a device is physically connected to the LAN (Xbox-facing) port.
+
+    Checks carrier state on the LAN slave port — NOT br0's ARP table.
+    br0's ARP table includes the WAN-side router (reached via the WAN slave)
+    and any other LAN neighbors of the bridge host itself, none of which
+    represent a device on the LAN side of the bridge.
+
+    The LAN slave is discovered as "the br0 member that isn't carrying the
+    default route" — same heuristic the bring-up script uses. Returns False
+    on any error so tests using this fixture skip gracefully on misconfigured
+    systems rather than blowing up.
+    """
+    # Discover WAN: the interface carrying the default route.
+    rc, default_route, _ = _run(["ip", "route", "show", "default"])
+    if rc != 0 or not default_route.strip():
         return False
-    return bool(stdout.strip())
+    tokens = default_route.split()
+    wan_iface: str | None = None
+    for i, tok in enumerate(tokens):
+        if tok == "dev" and i + 1 < len(tokens):
+            wan_iface = tokens[i + 1]
+            break
+    if not wan_iface:
+        return False
+
+    # LAN is the bridge member that isn't WAN.
+    brif = Path("/sys/class/net/br0/brif")
+    if not brif.exists():
+        return False
+    try:
+        members = [p.name for p in brif.iterdir() if p.is_dir()]
+    except OSError:
+        return False
+    lan_candidates = [m for m in members if m != wan_iface]
+    if len(lan_candidates) != 1:
+        return False
+    lan_iface = lan_candidates[0]
+
+    # carrier == "1" means cable plugged in and physical link negotiated.
+    try:
+        carrier = Path(f"/sys/class/net/{lan_iface}/carrier").read_text().strip()
+    except OSError:
+        return False
+    return carrier == "1"
 
 
 # ── Structural tests (no connected device required) ───────────────────────────
@@ -300,7 +339,10 @@ class TestBridgeTraffic:
     ) -> None:
         """Bridged traffic (Xbox → router) must increment the nftables forward counter."""
         if not has_connected_device:
-            pytest.skip("No device detected on LAN port (br0 ARP table empty)")
+            pytest.skip(
+                "No device detected on LAN port (no carrier on LAN slave). "
+                "Plug a device into the Xbox-facing port and re-run."
+            )
 
         # Write a counting rule via nft -f to avoid command-line quoting issues.
         comment = "xblp_stage5_test"
