@@ -259,6 +259,7 @@ touch "$SENTINEL"
 info "Installing rollback script to $ROLLBACK_INSTALL_DIR ..."
 mkdir -p "$ROLLBACK_INSTALL_DIR"
 install -m 755 "$SCRIPT_DIR/rollback-bridge.sh" "$ROLLBACK_INSTALL_DIR/rollback-bridge.sh"
+install -m 755 "$SCRIPT_DIR/apply-bridge.sh" "$ROLLBACK_INSTALL_DIR/apply-bridge.sh"
 
 info "Installing xblp-bridge-rollback.service..."
 install -m 644 "$SCRIPT_DIR/xblp-bridge-rollback.service" \
@@ -361,16 +362,10 @@ hr
 
 systemd-run \
     --no-block \
+    --collect \
     --unit=xblp-bridge-apply \
     --description="xboxlive-protect: apply bridge configuration" \
-    /bin/bash -c "
-        sleep 3
-        pkill -f 'dhclient.*${WAN_IFACE}' 2>/dev/null || true
-        pkill -f 'dhclient.*${LAN_IFACE}' 2>/dev/null || true
-        ip addr flush dev ${WAN_IFACE} 2>/dev/null || true
-        ip addr flush dev ${LAN_IFACE} 2>/dev/null || true
-        systemctl restart networking
-    " >/dev/null 2>&1
+    "$ROLLBACK_INSTALL_DIR/apply-bridge.sh" "$WAN_IFACE" "$LAN_IFACE"
 
 info "Transient bridge-apply unit launched (xblp-bridge-apply.service)."
 info "After reconnect, view its log with:"
