@@ -169,7 +169,7 @@ else
     info "LAN interface (explicit): $LAN_IFACE"
 fi
 
-# ── Step 7: Install bridge-utils ─────────────────────────────────────────────
+# ── Step 7: Install bridge-utils + verify systemd-run ────────────────────────
 # Must succeed before any destructive change; safe to retry if it fails here.
 if ! command -v brctl &>/dev/null; then
     info "Installing bridge-utils..."
@@ -178,6 +178,13 @@ if ! command -v brctl &>/dev/null; then
   No network configuration has been modified."
     info "bridge-utils installed."
 fi
+
+# systemd-run is required for the detached networking restart at the end.
+# We check now (before any destructive change) so we bail cleanly if missing.
+# Always present on Debian 12, but defensive — see Step 16 for rationale.
+command -v systemd-run &>/dev/null || \
+    die "systemd-run not available. This script requires systemd.
+  No network configuration has been modified."
 
 # ── Step 8: Load br_netfilter ─────────────────────────────────────────────────
 # Required before writing the sysctl (the sysctl key doesn't exist until the
@@ -331,7 +338,16 @@ if ! nft list chain inet xblp forward &>/dev/null 2>&1; then
     warn ""
 fi
 
-# ── Step 16: Schedule detached networking restart ────────────────────────────
+# ── Step 16: Schedule detached networking restart via systemd-run ────────────
+# We must NOT use `nohup ... &` here. The SSH session's logind scope kills
+# child processes when the session terminates (which happens the moment we
+# flush the WAN IP). nohup protects against SIGHUP, but logind sends SIGTERM
+# to the entire session scope on disconnect — child shells die before
+# `systemctl restart networking` runs, and the bridge is never created.
+#
+# `systemd-run --no-block` creates a transient unit owned by PID 1. The unit
+# survives session termination and runs to completion. The named unit allows
+# the user to inspect what happened: `journalctl -u xblp-bridge-apply`.
 hr
 info "Network will restart in 3 seconds. This SSH session will disconnect."
 printf '\n'
@@ -343,11 +359,20 @@ warn "If you cannot reconnect within ${CONFIRM_MINUTES} minutes, the device will
 warn "reboot itself and restore the previous network configuration."
 hr
 
-nohup bash -c "sleep 3
-pkill -f 'dhclient.*${WAN_IFACE}' 2>/dev/null || true
-pkill -f 'dhclient.*${LAN_IFACE}' 2>/dev/null || true
-ip addr flush dev ${WAN_IFACE} 2>/dev/null || true
-ip addr flush dev ${LAN_IFACE} 2>/dev/null || true
-systemctl restart networking" >/dev/null 2>&1 &
-disown $!
+systemd-run \
+    --no-block \
+    --unit=xblp-bridge-apply \
+    --description="xboxlive-protect: apply bridge configuration" \
+    /bin/bash -c "
+        sleep 3
+        pkill -f 'dhclient.*${WAN_IFACE}' 2>/dev/null || true
+        pkill -f 'dhclient.*${LAN_IFACE}' 2>/dev/null || true
+        ip addr flush dev ${WAN_IFACE} 2>/dev/null || true
+        ip addr flush dev ${LAN_IFACE} 2>/dev/null || true
+        systemctl restart networking
+    " >/dev/null 2>&1
+
+info "Transient bridge-apply unit launched (xblp-bridge-apply.service)."
+info "After reconnect, view its log with:"
+info "  journalctl -u xblp-bridge-apply -b"
 exit 0
