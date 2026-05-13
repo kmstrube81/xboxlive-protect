@@ -19,7 +19,10 @@ Key properties:
 
 ## Status
 
-**Pre-implementation.** The design specification is complete; code does not yet exist.
+**Phase 2, Stage 1 in progress.**
+
+- **Phase 1 complete:** transparent L2 bridge, nftables ruleset, packet capture daemon, peer scorer, SQLite data layer — 120 unit tests + 19 integration tests passing.
+- **Phase 2 Stage 1 in progress:** FastAPI daemon scaffolding, session auth end-to-end, nftables bootstrap wire-up. (Exit criteria not yet verified on R4S.)
 
 See [DESIGN.md](DESIGN.md) for the full design specification and [Section 15](DESIGN.md#15-phased-implementation-plan) for the phased implementation plan.
 
