@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import structlog
 from fastapi import FastAPI
@@ -31,13 +31,26 @@ from xblp_common import db as db_module
 from xblp_common.migrations import create_tables
 from xblp_common.models import User
 
-if TYPE_CHECKING:
-    pass
-
 log = structlog.get_logger(__name__)
 
 _DEFAULT_ADMIN_USERNAME = "admin"
 _DEFAULT_ADMIN_PASSWORD = "xboxlive-protect"
+
+
+def _ensure_db_dir(settings: Settings) -> None:
+    """Create the parent directory of the SQLite DB file if it doesn't exist.
+
+    Skipped for :memory: databases. The install script creates
+    /var/lib/xboxlive-protect in production, but on a fresh dev box or a
+    fresh R4S before the install script has run, the directory may not exist
+    yet and SQLAlchemy's first connection attempt would crash.
+    """
+    if settings.db_path == ":memory:":
+        return
+    parent = Path(settings.db_path).parent
+    if not parent.exists():
+        parent.mkdir(parents=True, exist_ok=True)
+        log.info("created db parent directory", path=str(parent))
 
 
 def _seed_admin(session_factory: sessionmaker, settings: Settings) -> None:
@@ -102,6 +115,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("xblp-api starting up")
+        _ensure_db_dir(settings)  # type: ignore[arg-type]
         create_tables(engine)  # type: ignore[arg-type]
         _apply_nft_ruleset(settings)  # type: ignore[arg-type]
         _seed_admin(session_factory, settings)  # type: ignore[arg-type]
