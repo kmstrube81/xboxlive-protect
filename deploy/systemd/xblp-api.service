@@ -1,0 +1,30 @@
+[Unit]
+Description=xboxlive-protect API daemon
+Documentation=https://github.com/kstrube/xboxlive-protect/blob/main/docs/api-auth.md
+After=network-online.target
+Wants=network-online.target
+
+# NOTE: xblp-capture.service does not exist yet (it will be added in Phase 2
+# Stage 2 when the capture daemon's systemd integration is wired). When it
+# does, consider adding: After=xblp-capture.service (but no Wants= — they are
+# independent per the architectural decision; capture does not depend on the
+# API being up and the API does not require capture to serve auth).
+
+[Service]
+Type=simple
+User=xblp
+Group=xblp
+WorkingDirectory=/opt/xboxlive-protect
+Environment=PYTHONPATH=/opt/xboxlive-protect/src
+ExecStart=/opt/xboxlive-protect/venv/bin/python -m xblp_api
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xblp-api
+
+# State database is the only path the API process writes to at runtime.
+ReadWritePaths=/var/lib/xboxlive-protect
+
+[Install]
+WantedBy=multi-user.target
