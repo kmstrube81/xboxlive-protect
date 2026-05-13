@@ -14,7 +14,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session as DbSession
 
 from xblp_api.auth.sessions import get_session, slide_session
-from xblp_api.config import Settings, get_settings
+from xblp_api.config import Settings, settings_from_app
 from xblp_common.models import User, UserSession
 
 _COOKIE_NAME = "xblp_session"
@@ -27,7 +27,7 @@ _PASSWORD_CHANGE_REQUIRED = {
 
 def current_session(
     request: Request,
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(settings_from_app),
 ) -> UserSession | None:
     """Return the active session attached by SessionMiddleware, if any."""
     return getattr(request.state, "session", None)

@@ -22,11 +22,10 @@ from xblp_api.auth.dependencies import current_user
 from xblp_api.auth.hashing import hash_password, verify_password
 from xblp_api.auth.sessions import (
     create_session,
-    get_session,
     revoke_all_for_user,
     revoke_session,
 )
-from xblp_api.config import Settings, get_settings
+from xblp_api.config import Settings, settings_from_app
 from xblp_common.models import AuditLog, EventType, User, UserSession
 
 log = structlog.get_logger(__name__)
@@ -111,7 +110,7 @@ async def login(
     body: LoginRequest,
     request: Request,
     response: Response,
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(settings_from_app),
 ) -> MeResponse:
     db: DbSession = _get_db(request)
     ua = request.headers.get("user-agent")
@@ -149,7 +148,7 @@ async def login(
 async def logout(
     request: Request,
     response: Response,
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(settings_from_app),
     user: User = Depends(current_user),
 ) -> None:
     db: DbSession = _get_db(request)
@@ -166,7 +165,7 @@ async def logout(
 async def change_password(
     body: PasswordChangeRequest,
     request: Request,
-    settings: Settings = Depends(get_settings),
+    settings: Settings = Depends(settings_from_app),
     user: User = Depends(current_user),
 ) -> None:
     db: DbSession = _get_db(request)
