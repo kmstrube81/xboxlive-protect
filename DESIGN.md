@@ -264,7 +264,10 @@ This is acceptable for the project's audience. The README will state this explic
 - Login produces a session cookie (HttpOnly, SameSite=Strict, Secure)
 - Sessions last 30 days, sliding expiration
 - "Log out everywhere" option in settings invalidates all sessions
-- Failed login attempts: 5 per minute per source IP, then 5-minute lockout
+- Failed login attempts are **not rate-limited and do not trigger lockout**. Given the
+  threat model in §6.2 (impact is annoyance only; recovery is reflash), lockouts would
+  primarily punish forgetful legitimate users. All failed attempts are recorded in the
+  audit log (event type `login_failed`) so there is a complete record.
 - No password recovery flow — lost password requires reflash or SSH access to reset
 
 ### 6.4 API authentication
