@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -44,6 +45,7 @@ class EventType(enum.StrEnum):
     host_detected = "host_detected"
     login = "login"
     login_failed = "login_failed"
+    password_changed = "password_changed"
     config_changed = "config_changed"
 
 
@@ -130,3 +132,43 @@ class DetectedHost(Base):
     asn: Mapped[str | None] = mapped_column(String, nullable=True)
     country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
     was_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+# ── Auth models (Phase 2) ─────────────────────────────────────────────────────
+
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (Index("ix_users_username", "username"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    sessions: Mapped[list["UserSession"]] = relationship(
+        "UserSession",
+        back_populates="user",
+        cascade="save-update, merge, delete",
+        passive_deletes=True,
+    )
+
+
+class UserSession(Base):
+    __tablename__ = "sessions"
+    __table_args__ = (Index("ix_sessions_user_id", "user_id"),)
+
+    # 32 random bytes encoded as 64 hex characters; not autoincrement.
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_used_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ip: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    user: Mapped[User] = relationship("User", back_populates="sessions")
