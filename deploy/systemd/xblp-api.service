@@ -23,8 +23,10 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=xblp-api
 
-# State database is the only path the API process writes to at runtime.
-ReadWritePaths=/var/lib/xboxlive-protect
+# Creates /var/lib/xboxlive-protect owned by xblp:xblp before the service
+# starts, so the API can open/create state.db without needing the install
+# script to have run first. Subsumes ReadWritePaths for that directory.
+StateDirectory=xboxlive-protect
 
 [Install]
 WantedBy=multi-user.target
