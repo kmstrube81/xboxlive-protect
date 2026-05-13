@@ -45,6 +45,7 @@ class EventType(enum.StrEnum):
     host_detected = "host_detected"
     login = "login"
     login_failed = "login_failed"
+    logout = "logout"
     password_changed = "password_changed"
     config_changed = "config_changed"
 

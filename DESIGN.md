@@ -328,7 +328,7 @@ CREATE TABLE audit_log (
                                         -- 'subscription_added' | 'subscription_removed'
                                         -- 'subscription_synced' | 'profile_changed'
                                         -- 'host_detected' | 'login' | 'login_failed'
-                                        -- 'password_changed' | 'config_changed'
+                                        -- 'logout' | 'password_changed' | 'config_changed'
     actor TEXT,                         -- 'user' | 'system' | 'subscription:<id>'
     target TEXT,                        -- IP, sub ID, etc.
     details JSON,                       -- event-specific structured data
