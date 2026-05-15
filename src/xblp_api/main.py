@@ -9,7 +9,13 @@ from xblp_api.config import get_settings
 def main() -> None:
     settings = get_settings()
     app = create_app(settings)
-    uvicorn.run(app, host=settings.bind_host, port=settings.bind_port)
+    uvicorn.run(
+        app,
+        host=settings.bind_host,
+        port=settings.bind_port,
+        proxy_headers=True,
+        forwarded_allow_ips="127.0.0.1",
+    )
 
 
 if __name__ == "__main__":

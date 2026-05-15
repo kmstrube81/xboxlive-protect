@@ -33,8 +33,9 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    # Server
-    bind_host: str = "0.0.0.0"
+    # Server — loopback-only; LAN access goes through nginx on 443.
+    # Set XBLP_BIND_HOST=0.0.0.0 in .env for Windows dev that needs LAN reach.
+    bind_host: str = "127.0.0.1"
     bind_port: int = 8080
 
     # Database
