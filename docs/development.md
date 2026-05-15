@@ -136,6 +136,56 @@ Stop with `Ctrl-C` — the sniffer shuts down cleanly.
 a long-lived daemon.  Those come in later stages.  This is purely for
 eyeballing whether the scorer sees the right peers during a live game.
 
+## Development TLS
+
+The API daemon generates a self-signed TLS certificate at first startup on Linux. The cert is written to `/var/lib/xboxlive-protect/cert.pem` (and `key.pem`) during the lifespan startup sequence. Generation is idempotent — if both files already exist they are not touched.
+
+**Certificate details:**
+
+| Field     | Value |
+|-----------|-------|
+| CN        | `xboxlive-protect` |
+| SAN       | `DNS:xboxlive-protect.local`, `DNS:xboxlive-protect` |
+| Key       | RSA-2048 |
+| Validity  | 10 years (no rotation — LAN appliance, see DESIGN.md §6.1) |
+
+**Trusting the cert from a dev machine:**
+
+- One-off curl: `curl -k https://xboxlive-protect.local/api/v1/auth/me`
+- Browser / permanent trust: copy `/var/lib/xboxlive-protect/cert.pem` to your machine and import it as a trusted certificate authority. The exact steps vary by browser; search "import CA certificate <browser name>".
+
+**Windows-side dev runs without TLS.** `tls_enabled` defaults to `False` on non-Linux hosts, so the daemon never generates a cert. Port 8080 is now loopback-only in production — LAN access goes through nginx on 443. On Windows you access the API directly:
+
+```
+XBLP_BIND_HOST=0.0.0.0   # only needed if testing from another machine on the LAN
+XBLP_COOKIE_SECURE=false
+XBLP_NFT_ENABLED=false
+XBLP_DB_PATH=state.db
+```
+
+Then `curl http://localhost:8080/api/v1/auth/me`.
+
+> **Note for anyone remembering the Stage 1 curl-on-8080 flow:** port 8080 is loopback-only from Stage 1 TLS onward. On the R4S, `curl http://localhost:8080/...` still works (from the device itself), but LAN access must go through nginx on 443. Direct LAN connections to port 8080 will be refused.
+
+## Deploying to R4S
+
+After installing the Python package at `/opt/xboxlive-protect`, run the system installer:
+
+```bash
+sudo bash deploy/install-stage1.sh
+```
+
+This script:
+- Installs nginx via apt
+- Creates the `xblp` service user
+- Installs the nginx reverse-proxy config and enables it
+- Installs systemd units including the nginx ordering drop-in
+- Starts `xblp-api`, waits for cert generation, then starts nginx
+
+The script is idempotent — safe to re-run on an already-installed system. See `deploy/install-stage1.sh` for the full step list; it is the authoritative spec for the Phase 5 SD image builder.
+
+After the script completes, open `https://xboxlive-protect.local` in a browser, accept the self-signed cert warning (one-time), and log in with the default credentials (`admin` / `xboxlive-protect`). You will be required to change the password immediately.
+
 ## Gotchas
 
 ### SQLite foreign key enforcement requires PRAGMA foreign_keys=ON
