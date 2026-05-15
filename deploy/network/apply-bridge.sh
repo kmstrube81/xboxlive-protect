@@ -47,6 +47,14 @@ ip addr flush dev "${LAN_IFACE}" || true
 # brings up br0 per the new config. This is the moment the bridge is born.
 systemctl restart networking
 
+# Reload avahi-daemon so it re-evaluates its interface list and re-announces
+# the host's mDNS records on br0 (the new management interface). Without this,
+# avahi may still believe it's announcing on the old per-NIC interface, or
+# may already have hit a host-name conflict against its own stale state and
+# fallen back to xboxlive-protect-2.local. Reload (not restart) preserves
+# already-registered services without churn.
+systemctl reload avahi-daemon || systemctl restart avahi-daemon || true
+
 # Report final state to the journal for diagnostic purposes.
 ip -brief addr show
 ip -brief link show
