@@ -135,13 +135,15 @@ def test_nginx_config_syntax(tmp_path: Path) -> None:
 # ── Tests 3–4: full HTTP/HTTPS chain (requires running stack) ─────────────────
 
 
-def _host_resolves(hostname: str) -> bool:
-    """Return True if the hostname resolves (mDNS or DNS)."""
-    result = subprocess.run(
-        ["getent", "hosts", hostname],
-        capture_output=True,
-    )
-    return result.returncode == 0
+def _port_open(host: str, port: int, timeout: float = 2.0) -> bool:
+    """Return True if a TCP connection to host:port can be established."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 @pytest.mark.integration
@@ -149,13 +151,12 @@ def _host_resolves(hostname: str) -> bool:
 def test_https_chain_returns_401(tmp_path: Path) -> None:
     """HTTPS request to /api/v1/auth/me returns 401 through the nginx+daemon chain.
 
-    Requires: install-stage1.sh has been run, both services are up, and
-    xboxlive-protect.local resolves via avahi mDNS.
+    Requires: install-stage1.sh has been run and nginx is listening on 443.
     """
     if not shutil.which("curl"):
         pytest.skip("curl not installed")
-    if not _host_resolves("xboxlive-protect.local"):
-        pytest.skip("xboxlive-protect.local does not resolve — stack not running")
+    if not _port_open("xboxlive-protect.local", 443):
+        pytest.skip("nginx not listening on 443 — run deploy/install-stage1.sh first")
 
     result = subprocess.run(
         [
@@ -178,13 +179,12 @@ def test_https_chain_returns_401(tmp_path: Path) -> None:
 def test_http_redirects_to_https(tmp_path: Path) -> None:
     """HTTP request to port 80 returns 301 redirect to https://.
 
-    Requires: install-stage1.sh has been run, nginx is up, and
-    xboxlive-protect.local resolves via avahi mDNS.
+    Requires: install-stage1.sh has been run and nginx is listening on 80.
     """
     if not shutil.which("curl"):
         pytest.skip("curl not installed")
-    if not _host_resolves("xboxlive-protect.local"):
-        pytest.skip("xboxlive-protect.local does not resolve — stack not running")
+    if not _port_open("xboxlive-protect.local", 80):
+        pytest.skip("nginx not listening on 80 — run deploy/install-stage1.sh first")
 
     result = subprocess.run(
         [
