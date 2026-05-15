@@ -70,6 +70,21 @@ def _seed_admin(session_factory: sessionmaker, settings: Settings) -> None:
             log.debug("users table not empty, skipping admin seed")
 
 
+def _ensure_tls_cert(settings: Settings) -> None:
+    """Generate the self-signed TLS cert if not already present.
+
+    Skipped on Windows (tls_enabled=False by default). On Linux the cert is
+    written to tls_cert_path/tls_key_path before nginx can start — see the
+    nginx.service.d/xblp.conf drop-in that orders nginx after this service.
+    """
+    if not settings.tls_enabled:
+        log.info("tls_enabled=false, skipping cert bootstrap (expected on Windows dev)")
+        return
+    from xblp_api.tls import ensure_cert_exists
+
+    ensure_cert_exists(Path(settings.tls_cert_path), Path(settings.tls_key_path))
+
+
 def _apply_nft_ruleset(settings: Settings) -> None:
     """Install the nftables ruleset if not already present.
 
@@ -116,6 +131,7 @@ def create_app(
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("xblp-api starting up")
         _ensure_db_dir(settings)  # type: ignore[arg-type]
+        _ensure_tls_cert(settings)  # type: ignore[arg-type]
         create_tables(engine)  # type: ignore[arg-type]
         _apply_nft_ruleset(settings)  # type: ignore[arg-type]
         _seed_admin(session_factory, settings)  # type: ignore[arg-type]

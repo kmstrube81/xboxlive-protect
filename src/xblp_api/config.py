@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # nftables bootstrap — disabled automatically on non-Linux hosts
     nft_enabled: bool = Field(default_factory=_is_linux)
 
+    # TLS — self-signed cert generated at first daemon start (DESIGN.md §6.1)
+    # Disabled automatically on non-Linux hosts (no nginx, no cert needed).
+    tls_enabled: bool = Field(default_factory=_is_linux)
+    tls_cert_path: str = "/var/lib/xboxlive-protect/cert.pem"
+    tls_key_path: str = "/var/lib/xboxlive-protect/key.pem"
+
     # argon2id parameters (OWASP recommended minimums)
     argon2_time_cost: int = 2
     argon2_memory_cost: int = 65536  # 64 MiB

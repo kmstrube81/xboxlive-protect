@@ -69,6 +69,7 @@ def _make_settings(nft_table: str = _TEST_TABLE) -> Settings:
         db_path=":memory:",
         cookie_secure=False,
         nft_enabled=True,
+        tls_enabled=False,
         argon2_time_cost=1,
         argon2_memory_cost=8192,
         argon2_parallelism=1,

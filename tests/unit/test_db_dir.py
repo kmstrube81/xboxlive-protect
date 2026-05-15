@@ -9,6 +9,7 @@ def _make_settings(**overrides) -> Settings:
     base = dict(
         cookie_secure=False,
         nft_enabled=False,
+        tls_enabled=False,
         argon2_time_cost=1,
         argon2_memory_cost=8192,
         argon2_parallelism=1,
