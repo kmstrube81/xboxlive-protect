@@ -18,6 +18,7 @@
 # This script is the authoritative spec for Phase 5's SD image builder.
 
 set -euo pipefail
+trap 'echo "ERROR: install-stage1.sh failed at line $LINENO" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -134,7 +135,8 @@ for i in $(seq 1 30); do
         break
     fi
     if [[ $i -eq 30 ]]; then
-        _red "  cert not found after 30s — check: journalctl -u xblp-api -n 50"
+        printf 'ERROR: xblp-api did not start. Last 20 journalctl lines:\n' >&2
+        journalctl -u xblp-api -n 20 --no-pager >&2
         exit 1
     fi
     sleep 1
