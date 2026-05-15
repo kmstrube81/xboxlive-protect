@@ -83,10 +83,16 @@ def _atomic_write(path: Path, data: bytes, mode: int) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}-")
     try:
         os.write(fd, data)
-        os.fchmod(fd, mode)
+        # fchmod sets the mode on the open fd before rename — key is never
+        # world-readable even briefly. Not available on Windows; fall back to
+        # chmod on the named path after rename (mode bits are no-ops on Windows).
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, mode)
     finally:
         os.close(fd)
     os.replace(tmp, path)
+    if not hasattr(os, "fchmod"):
+        os.chmod(path, mode)
 
 
 def ensure_cert_exists(cert_path: Path, key_path: Path) -> None:
