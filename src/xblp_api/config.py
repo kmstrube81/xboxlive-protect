@@ -18,7 +18,9 @@ from fastapi import Request
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-_on_linux = sys.platform == "linux"
+
+def _is_linux() -> bool:
+    return sys.platform == "linux"
 
 
 class Settings(BaseSettings):
@@ -39,12 +41,12 @@ class Settings(BaseSettings):
     db_path: str = "/var/lib/xboxlive-protect/state.db"
 
     # Session cookie
-    cookie_secure: bool = Field(default_factory=lambda: _on_linux)
+    cookie_secure: bool = Field(default_factory=_is_linux)
     session_lifetime_days: int = 30
     session_id_bytes: int = 32
 
     # nftables bootstrap — disabled automatically on non-Linux hosts
-    nft_enabled: bool = Field(default_factory=lambda: _on_linux)
+    nft_enabled: bool = Field(default_factory=_is_linux)
 
     # argon2id parameters (OWASP recommended minimums)
     argon2_time_cost: int = 2
