@@ -5,13 +5,19 @@ with nft available:
   1. Startup on a clean DB installs the nftables `table inet xblp` if absent.
   2. Startup on a clean DB is a no-op when the table already exists.
   3. Default admin is seeded on a fresh DB and not duplicated on restart.
+  4. xblp-api.service (via systemd) creates table inet xblp using CAP_NET_ADMIN.
+  5. Daemon exits 1 and logs an error when state.db is root-owned.
+
+Tests 4–5 are systemd end-to-end tests that require the service to be installed
+via install-stage1.sh. They are skipped automatically when the service is absent.
 
 These tests are ONLY valid on Linux with root (nft requires root). They are
 deselected on all other platforms by the `linux` marker.
 """
 
+import os
 import subprocess
-import tempfile
+import time
 from pathlib import Path
 
 import pytest
@@ -143,3 +149,100 @@ async def test_default_admin_seeded_on_fresh_db(monkeypatch):
         with factory() as db:
             count = db.query(User).filter_by(username=_DEFAULT_ADMIN_USERNAME).count()
         assert count == 1
+
+
+# ── Systemd end-to-end tests (require install-stage1.sh to have run) ──────────
+
+
+def _service_installed() -> bool:
+    return subprocess.run(
+        ["systemctl", "cat", "xblp-api.service"],
+        capture_output=True,
+    ).returncode == 0
+
+
+def _service_active() -> bool:
+    return subprocess.run(
+        ["systemctl", "is-active", "xblp-api"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip() == "active"
+
+
+@pytest.mark.integration
+@pytest.mark.linux
+def test_service_creates_nft_table_via_systemctl():
+    """xblp-api.service creates table inet xblp via CAP_NET_ADMIN when absent.
+
+    This exercises the actual service user path (xblp) and confirms the unit
+    file grants sufficient capabilities. The in-process tests above run as root
+    and do not test this.
+    """
+    if not _service_installed():
+        pytest.skip("xblp-api.service not installed; run install-stage1.sh first")
+    if os.geteuid() != 0:
+        pytest.skip("systemctl restart requires root")
+
+    _remove_nft_table("xblp")
+    assert not _nft_table_present("xblp")
+
+    subprocess.run(["systemctl", "restart", "xblp-api"], check=True)
+
+    deadline = time.monotonic() + 15
+    table_found = False
+    while time.monotonic() < deadline:
+        if _service_active() and _nft_table_present("xblp"):
+            table_found = True
+            break
+        time.sleep(0.5)
+
+    assert table_found, (
+        "xblp-api.service did not create table inet xblp within 15 s; "
+        "check: journalctl -u xblp-api -n 30 --no-pager"
+    )
+
+
+@pytest.fixture
+def root_owned_state_db():
+    """Stop service, chown state.db to root, yield path, then restore and restart."""
+    db = Path("/var/lib/xboxlive-protect/state.db")
+    if not db.exists():
+        pytest.skip("state.db not found; start xblp-api at least once first")
+    if not _service_installed():
+        pytest.skip("xblp-api.service not installed; run install-stage1.sh first")
+    if os.geteuid() != 0:
+        pytest.skip("chown requires root")
+
+    subprocess.run(["systemctl", "stop", "xblp-api"], check=False)
+    subprocess.run(["chown", "root:root", str(db)], check=True)
+    try:
+        yield db
+    finally:
+        subprocess.run(["chown", "xblp:xblp", str(db)], check=False)
+        subprocess.run(["systemctl", "start", "xblp-api"], check=False)
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if _service_active():
+                break
+            time.sleep(0.5)
+
+
+@pytest.mark.integration
+@pytest.mark.linux
+def test_root_owned_db_causes_startup_failure(root_owned_state_db):
+    """Daemon exits 1 when state.db is root-owned; error appears in journal."""
+    subprocess.run(["systemctl", "start", "xblp-api"], check=False)
+    time.sleep(5)
+
+    assert not _service_active(), (
+        "xblp-api should have exited 1 with root-owned state.db but is still active"
+    )
+
+    journal = subprocess.run(
+        ["journalctl", "-u", "xblp-api", "-n", "20", "--no-pager", "-o", "cat"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert "database file is not writable" in journal, (
+        f"Expected 'database file is not writable' in journal; got:\n{journal}"
+    )

@@ -15,7 +15,7 @@ Type=simple
 User=xblp
 Group=xblp
 WorkingDirectory=/opt/xboxlive-protect
-Environment=PYTHONPATH=/opt/xboxlive-protect/src
+Environment=PYTHONPATH=/opt/xboxlive-protect/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ExecStart=/opt/xboxlive-protect/venv/bin/python -m xblp_api
 Restart=on-failure
 RestartSec=5
@@ -27,6 +27,20 @@ SyslogIdentifier=xblp-api
 # starts, so the API can open/create state.db without needing the install
 # script to have run first. Subsumes ReadWritePaths for that directory.
 StateDirectory=xboxlive-protect
+
+# CAP_NET_ADMIN lets the daemon (running as xblp) apply the nftables ruleset
+# at startup. Without it, apply_initial_ruleset() fails with EPERM on a fresh
+# device that has no pre-existing inet xblp table.
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=true
+
+# Harden the filesystem view: /usr, /boot, /etc are read-only from the
+# service's perspective. Using full rather than strict so Phase 3/5 can
+# reach other /var paths without per-release access debugging.
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
