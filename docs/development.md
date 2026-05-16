@@ -42,6 +42,8 @@ export XBLP_DB_PATH=./dev.db
 
 The file is created automatically on first run. Add `dev.db` to your local `.git/info/exclude` if you do not want to commit it. The repo's `.gitignore` does not track it.
 
+**Warning — root-owned DB pitfall:** If you run the daemon manually as root for testing (`sudo python -m xblp_api`), the DB will be created with root ownership and the systemd-managed daemon (running as `xblp`) will later fail to write to it. The daemon now detects this at startup and exits with a clear error, but the fix is still manual. Either run the daemon as the `xblp` user (`sudo -u xblp python -m xblp_api`), use a local path (`XBLP_DB_PATH=./dev.db`) so the production state dir is not affected, or re-run `deploy/install-stage1.sh` — its `chown -R` step will restore correct ownership.
+
 ## Running integration tests
 
 Integration tests exercise real system calls against kernel subsystems. They
