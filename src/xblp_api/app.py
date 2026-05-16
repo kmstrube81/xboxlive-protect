@@ -1,10 +1,14 @@
 """FastAPI application factory (see DESIGN.md §4.2, §6.1, §15 Phase 2).
 
 Lifespan startup sequence:
-  1. Create database tables (create_all — matches Phase 1 migration approach).
-  2. Apply the nftables ruleset if absent (skipped on non-Linux or when
-     XBLP_NFT_ENABLED=false so Windows dev doesn't crash).
-  3. Seed the default admin user if the users table is empty.
+  1. Create DB parent directory if absent.
+  2. Probe state directory writability — exits 1 with a clear chown hint if
+     the directory is not writable by the current user (e.g. root-owned from
+     a previous manual run). Skipped for :memory: databases.
+  3. Generate self-signed TLS cert if absent (skipped on Windows).
+  4. Create database tables.
+  5. Apply the nftables ruleset if absent (skipped on non-Linux).
+  6. Seed the default admin user if the users table is empty.
 
 The app is constructed by create_app() so tests can pass a custom Settings
 object and a pre-built SQLAlchemy engine without touching env vars or the
@@ -13,6 +17,8 @@ filesystem.
 
 from __future__ import annotations
 
+import os
+import sys
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -68,6 +74,42 @@ def _seed_admin(session_factory: sessionmaker, settings: Settings) -> None:
             log.info("default admin user seeded", username=_DEFAULT_ADMIN_USERNAME)
         else:
             log.debug("users table not empty, skipping admin seed")
+
+
+def _probe_state_dir_writable(settings: Settings) -> None:
+    """Write and immediately delete a probe file in the state directory.
+
+    Catches the common failure mode where a previous manual run as root left
+    the state directory or its contents root-owned, making subsequent writes
+    by the xblp service user fail. Exits 1 with a clear chown hint rather
+    than letting the daemon start and 500 on the first DB write.
+
+    Skipped for :memory: databases (tests and Windows dev).
+    """
+    if settings.db_path == ":memory:":
+        return
+
+    state_dir = Path(settings.db_path).parent
+    probe = state_dir / ".xblp_write_probe"
+    try:
+        probe.write_bytes(b"\x00")
+        probe.unlink()
+    except OSError as exc:
+        try:
+            import pwd as _pwd
+
+            current_user = _pwd.getpwuid(os.geteuid()).pw_name
+        except (ImportError, KeyError, AttributeError):
+            current_user = str(os.geteuid()) if hasattr(os, "geteuid") else "unknown"
+
+        log.error(
+            "state directory is not writable — daemon cannot start",
+            state_dir=str(state_dir),
+            current_user=current_user,
+            error=str(exc),
+            fix=f"sudo chown -R xblp:xblp {state_dir}",
+        )
+        sys.exit(1)
 
 
 def _ensure_tls_cert(settings: Settings) -> None:
@@ -131,6 +173,7 @@ def create_app(
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         log.info("xblp-api starting up")
         _ensure_db_dir(settings)  # type: ignore[arg-type]
+        _probe_state_dir_writable(settings)  # type: ignore[arg-type]
         _ensure_tls_cert(settings)  # type: ignore[arg-type]
         create_tables(engine)  # type: ignore[arg-type]
         _apply_nft_ruleset(settings)  # type: ignore[arg-type]
