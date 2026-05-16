@@ -2,13 +2,16 @@
 
 Lifespan startup sequence:
   1. Create DB parent directory if absent.
-  2. Probe state directory writability — exits 1 with a clear chown hint if
-     the directory is not writable by the current user (e.g. root-owned from
-     a previous manual run). Skipped for :memory: databases.
+  2. Probe state directory writability (dir-level) — exits 1 with a clear
+     chown hint if the directory is not writable by the current user (e.g.
+     root-owned from a previous manual run). Skipped for :memory: databases.
   3. Generate self-signed TLS cert if absent (skipped on Windows).
-  4. Create database tables.
-  5. Apply the nftables ruleset if absent (skipped on non-Linux).
-  6. Seed the default admin user if the users table is empty.
+  4. Probe database file writability via real INSERT — exits 1 if state.db
+     exists but is root-owned while the directory is xblp-owned. Skipped
+     for :memory: databases.
+  5. Create database tables.
+  6. Apply the nftables ruleset if absent (skipped on non-Linux).
+  7. Seed the default admin user if the users table is empty.
 
 The app is constructed by create_app() so tests can pass a custom Settings
 object and a pre-built SQLAlchemy engine without touching env vars or the
@@ -26,7 +29,8 @@ from pathlib import Path
 
 import structlog
 from fastapi import FastAPI
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from xblp_api.auth.hashing import hash_password
@@ -127,6 +131,42 @@ def _ensure_tls_cert(settings: Settings) -> None:
     ensure_cert_exists(Path(settings.tls_cert_path), Path(settings.tls_key_path))
 
 
+def _probe_db_writable_via_real_insert(engine: Engine, settings: Settings) -> None:
+    """Verify the database file is writable via a transient INSERT.
+
+    The state-directory probe (_probe_state_dir_writable) passes when the
+    directory is xblp-owned but state.db itself is root-owned — SQLite can
+    write journal files to the directory without touching the main DB file.
+    This probe catches that case by attempting a real write to state.db.
+    Skipped for :memory: databases.
+    """
+    if settings.db_path == ":memory:":
+        return
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE TABLE IF NOT EXISTS _xblp_write_probe (id INTEGER PRIMARY KEY)"))
+            conn.execute(text("INSERT INTO _xblp_write_probe VALUES (1)"))
+            conn.execute(text("DROP TABLE IF EXISTS _xblp_write_probe"))
+            conn.commit()
+    except OperationalError as exc:
+        try:
+            import pwd as _pwd
+
+            current_user = _pwd.getpwuid(os.geteuid()).pw_name
+        except (ImportError, KeyError, AttributeError):
+            current_user = str(os.geteuid()) if hasattr(os, "geteuid") else "unknown"
+
+        log.error(
+            "database file is not writable — daemon cannot start",
+            db_path=settings.db_path,
+            current_user=current_user,
+            error=str(exc),
+            fix=f"sudo chown xblp:xblp {settings.db_path}",
+        )
+        sys.exit(1)
+
+
 def _apply_nft_ruleset(settings: Settings) -> None:
     """Install the nftables ruleset if not already present.
 
@@ -175,6 +215,7 @@ def create_app(
         _ensure_db_dir(settings)  # type: ignore[arg-type]
         _probe_state_dir_writable(settings)  # type: ignore[arg-type]
         _ensure_tls_cert(settings)  # type: ignore[arg-type]
+        _probe_db_writable_via_real_insert(engine, settings)  # type: ignore[arg-type]
         create_tables(engine)  # type: ignore[arg-type]
         _apply_nft_ruleset(settings)  # type: ignore[arg-type]
         _seed_admin(session_factory, settings)  # type: ignore[arg-type]
