@@ -96,9 +96,11 @@ fi
 
 _step "Ensuring state directory $STATE_DIR"
 mkdir -p "$STATE_DIR"
-chown "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
+# chown -R is unconditional and idempotent — it also fixes any files inside
+# the directory that were created by a previous root-owned daemon run.
+chown -R "$SERVICE_USER:$SERVICE_USER" "$STATE_DIR"
 chmod 750 "$STATE_DIR"
-_green "  $STATE_DIR owned by $SERVICE_USER"
+_green "  $STATE_DIR owned by $SERVICE_USER (recursive)"
 
 # ── 5. nginx config ───────────────────────────────────────────────────────────
 
@@ -141,6 +143,14 @@ for i in $(seq 1 30); do
     fi
     sleep 1
 done
+
+# Verify nginx can read the cert (catches unexpected ownership even after chown -R).
+if ! runuser -u "$SERVICE_USER" -- test -r "$STATE_DIR/cert.pem"; then
+    printf 'ERROR: cert.pem not readable by %s. Last 20 journalctl lines:\n' "$SERVICE_USER" >&2
+    journalctl -u xblp-api -n 20 --no-pager >&2
+    exit 1
+fi
+_green "  cert readable by $SERVICE_USER"
 
 # ── 8. Validate and start nginx ───────────────────────────────────────────────
 
