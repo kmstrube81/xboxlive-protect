@@ -39,7 +39,10 @@ NoNewPrivileges=true
 # service's perspective. Using full rather than strict so Phase 3/5 can
 # reach other /var paths without per-release access debugging.
 ProtectSystem=full
-ProtectHome=true
+# ProtectHome=true is intentionally not set in Stage 1 because the dev install
+# layout symlinks code through /home/pi/Projects/xboxlive-protect into /opt/.
+# Phase 5's image-build pipeline will deploy real code to /opt/xboxlive-protect
+# and can reinstate ProtectHome=true at that point.
 PrivateTmp=true
 
 [Install]
