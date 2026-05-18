@@ -162,7 +162,7 @@ async def create_rule(
     ok, reason = is_ip_blockable(body.ip_address, body.cidr_prefix)
     if not ok:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"error": "ip_not_blockable", "reason": reason},
         )
 
