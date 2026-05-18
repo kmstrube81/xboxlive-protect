@@ -37,9 +37,11 @@ from xblp_api.auth.hashing import hash_password
 from xblp_api.config import Settings
 from xblp_api.middleware import SessionMiddleware
 from xblp_api.routes.auth import router as auth_router
+from xblp_api.routes.rules import router as rules_router
 from xblp_common import db as db_module
 from xblp_common.migrations import create_tables
 from xblp_common.models import User
+from xblp_common.nft import NoopNftManager
 
 log = structlog.get_logger(__name__)
 
@@ -167,25 +169,30 @@ def _probe_db_writable_via_real_insert(engine: Engine, settings: Settings) -> No
         sys.exit(1)
 
 
-def _apply_nft_ruleset(settings: Settings) -> None:
-    """Install the nftables ruleset if not already present.
+def _init_nft_manager(settings: Settings) -> object:
+    """Initialise the nftables manager and install the ruleset if absent.
 
-    Skipped gracefully when NFT_ENABLED is False (Windows dev) or when nft is
-    not on the PATH. Either condition just logs a warning.
+    Returns a live ``NftManager`` on Linux when the nft binary is available,
+    or a ``NoopNftManager`` otherwise.  The returned object is stored on
+    ``app.state.nft_manager`` so route handlers can call
+    ``reconcile_blocklist(session, app.state.nft_manager)`` unconditionally.
     """
     if not settings.nft_enabled:
         log.warning("nft_enabled=false, skipping ruleset bootstrap (expected on Windows dev)")
-        return
+        return NoopNftManager()
 
     try:
         from xblp_common.nft import NftError, NftManager
 
         mgr = NftManager()
         mgr.apply_initial_ruleset()
+        return mgr
     except FileNotFoundError:
         log.warning("nft binary not found, skipping ruleset bootstrap")
     except NftError as exc:
         log.error("nft ruleset bootstrap failed", error=str(exc))
+
+    return NoopNftManager()
 
 
 def create_app(
@@ -217,7 +224,7 @@ def create_app(
         _ensure_tls_cert(settings)  # type: ignore[arg-type]
         _probe_db_writable_via_real_insert(engine, settings)  # type: ignore[arg-type]
         create_tables(engine)  # type: ignore[arg-type]
-        _apply_nft_ruleset(settings)  # type: ignore[arg-type]
+        _app.state.nft_manager = _init_nft_manager(settings)  # type: ignore[arg-type]
         _seed_admin(session_factory, settings)  # type: ignore[arg-type]
         log.info("xblp-api startup complete")
         yield
@@ -234,5 +241,6 @@ def create_app(
     )
 
     app.include_router(auth_router)
+    app.include_router(rules_router)
 
     return app
