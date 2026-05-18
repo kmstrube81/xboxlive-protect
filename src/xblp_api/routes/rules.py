@@ -131,3 +131,81 @@ async def list_rules(
         limit=limit,
         offset=offset,
     )
+
+
+# ── POST /rules ───────────────────────────────────────────────────────────────
+
+
+@router.post("", response_model=RuleResponse, status_code=status.HTTP_201_CREATED)
+async def create_rule(
+    body: RuleCreate,
+    request: Request,
+    _user: User = Depends(require_password_changed),
+) -> RuleResponse:
+    """Add a local block rule.
+
+    Validates the IP against RFC 1918, loopback, link-local, the Xbox Live
+    allowlist (inert until Phase 3), and the device's detected gateway/bridge
+    IP.  Returns 422 with ``{"error": "ip_not_blockable", "reason": "<reason>"}``
+    on any rejection.
+
+    Returns 409 if a local rule for the same ``(ip_address, cidr_prefix)``
+    already exists.  A subscription rule for the same IP does not conflict —
+    both can coexist; see docs/api-rules.md for the uniqueness model.
+
+    Writes a ``rule_added`` audit entry with a ``undo_token`` for Phase 4 undo.
+    Calls ``reconcile_blocklist`` to project the new rule into nftables.
+    """
+    db = _get_db(request)
+    nft = _get_nft(request)
+
+    ok, reason = is_ip_blockable(body.ip_address, body.cidr_prefix)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"error": "ip_not_blockable", "reason": reason},
+        )
+
+    now = _now()
+    rule = Rule(
+        ip_address=body.ip_address,
+        cidr_prefix=body.cidr_prefix,
+        source="local",
+        comment=body.comment,
+        confidence=body.confidence,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(rule)
+
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "rule_already_exists",
+                "message": "A local rule for this (ip_address, cidr_prefix) already exists.",
+            },
+        )
+
+    undo_token = uuid.uuid4().hex
+    _write_rule_audit(
+        db,
+        EventType.rule_added,
+        target=f"{body.ip_address}/{body.cidr_prefix}",
+        undo_token=undo_token,
+        details={
+            "id": rule.id,
+            "comment": body.comment,
+            "confidence": str(body.confidence) if body.confidence is not None else None,
+        },
+    )
+    db.commit()
+
+    reconcile_blocklist(db, nft)
+
+    db.refresh(rule)
+    log.info("rule_added", ip=body.ip_address, cidr=body.cidr_prefix, id=rule.id)
+    return RuleResponse.model_validate(rule)
