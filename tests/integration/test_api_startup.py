@@ -15,6 +15,7 @@ These tests are ONLY valid on Linux with root (nft requires root). They are
 deselected on all other platforms by the `linux` marker.
 """
 
+import datetime
 import os
 import subprocess
 import time
@@ -186,6 +187,7 @@ def test_service_creates_nft_table_via_systemctl():
     _remove_nft_table("xblp")
     assert not _nft_table_present("xblp")
 
+    subprocess.run(["systemctl", "reset-failed", "xblp-api"], check=False)
     subprocess.run(["systemctl", "restart", "xblp-api"], check=True)
 
     deadline = time.monotonic() + 15
@@ -219,6 +221,7 @@ def root_owned_state_db():
         yield db
     finally:
         subprocess.run(["chown", "xblp:xblp", str(db)], check=False)
+        subprocess.run(["systemctl", "reset-failed", "xblp-api"], check=False)
         subprocess.run(["systemctl", "start", "xblp-api"], check=False)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
@@ -231,6 +234,8 @@ def root_owned_state_db():
 @pytest.mark.linux
 def test_root_owned_db_causes_startup_failure(root_owned_state_db):
     """Daemon exits 1 when state.db is root-owned; error appears in journal."""
+    since = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    subprocess.run(["systemctl", "reset-failed", "xblp-api"], check=False)
     subprocess.run(["systemctl", "start", "xblp-api"], check=False)
     time.sleep(5)
 
@@ -239,10 +244,10 @@ def test_root_owned_db_causes_startup_failure(root_owned_state_db):
     )
 
     journal = subprocess.run(
-        ["journalctl", "-u", "xblp-api", "-n", "20", "--no-pager", "-o", "cat"],
+        ["journalctl", "-u", "xblp-api", "--since", since, "--no-pager", "-o", "cat"],
         capture_output=True,
         text=True,
     ).stdout
     assert "database file is not writable" in journal, (
-        f"Expected 'database file is not writable' in journal; got:\n{journal}"
+        f"Expected 'database file is not writable' in journal since {since}; got:\n{journal}"
     )
