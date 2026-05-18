@@ -209,3 +209,120 @@ async def create_rule(
     db.refresh(rule)
     log.info("rule_added", ip=body.ip_address, cidr=body.cidr_prefix, id=rule.id)
     return RuleResponse.model_validate(rule)
+
+
+# ── PATCH /rules/{rule_id} ────────────────────────────────────────────────────
+
+
+@router.patch("/{rule_id}", response_model=RuleResponse)
+async def update_rule(
+    rule_id: int,
+    body: RuleUpdate,
+    request: Request,
+    _user: User = Depends(require_password_changed),
+) -> RuleResponse:
+    """Edit a local rule's comment and/or confidence.
+
+    ``ip_address`` and ``cidr_prefix`` are immutable (they are the identity of
+    the rule — changing them requires delete + recreate).  Only fields present
+    in the request body are updated; omitting a field leaves it unchanged.
+    Setting a field to ``null`` explicitly clears it.
+
+    Returns 403 for subscription rules.  Returns 404 if the rule does not exist.
+    Returns 200 with the updated rule.  If the provided values are identical to
+    the current row no audit entry is written and 200 is returned immediately.
+
+    PATCH never changes ip_address/cidr_prefix, so nftables state is unchanged;
+    reconcile_blocklist is not called.
+    """
+    db = _get_db(request)
+
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    if rule.source != "local":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_SUBSCRIPTION_RULE_IMMUTABLE
+        )
+
+    # Determine which provided fields actually differ from the current row.
+    # model_fields_set tells us what the caller sent; we then compare values.
+    changed: dict[str, object] = {}
+    if "comment" in body.model_fields_set and body.comment != rule.comment:
+        changed["comment"] = body.comment
+    if "confidence" in body.model_fields_set and body.confidence != rule.confidence:
+        changed["confidence"] = body.confidence
+
+    if not changed:
+        return RuleResponse.model_validate(rule)
+
+    now = _now()
+    for field, value in changed.items():
+        setattr(rule, field, value)
+    rule.updated_at = now
+
+    undo_token = uuid.uuid4().hex
+    _write_rule_audit(
+        db,
+        EventType.rule_edited,
+        target=f"{rule.ip_address}/{rule.cidr_prefix}",
+        undo_token=undo_token,
+        details={
+            "id": rule_id,
+            "changes": {k: str(v) if v is not None else None for k, v in changed.items()},
+        },
+    )
+    db.commit()
+
+    db.refresh(rule)
+    log.info("rule_edited", id=rule_id, changes=list(changed))
+    return RuleResponse.model_validate(rule)
+
+
+# ── DELETE /rules/{rule_id} ───────────────────────────────────────────────────
+
+
+@router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_rule(
+    rule_id: int,
+    request: Request,
+    _user: User = Depends(require_password_changed),
+) -> None:
+    """Remove a local block rule.
+
+    Returns 403 for subscription rules (use POST /rules/{id}/promote first if
+    you want to delete a subscription rule by converting it to local first).
+    Returns 404 if the rule does not exist.
+
+    Writes a ``rule_removed`` audit entry with a ``undo_token``.
+    Calls ``reconcile_blocklist`` to remove the IP from nftables.
+    """
+    db = _get_db(request)
+    nft = _get_nft(request)
+
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    if rule.source != "local":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=_SUBSCRIPTION_RULE_IMMUTABLE
+        )
+
+    ip = rule.ip_address
+    cidr = rule.cidr_prefix
+
+    undo_token = uuid.uuid4().hex
+    _write_rule_audit(
+        db,
+        EventType.rule_removed,
+        target=f"{ip}/{cidr}",
+        undo_token=undo_token,
+        details={"id": rule_id, "comment": rule.comment},
+    )
+    db.delete(rule)
+    db.commit()
+
+    reconcile_blocklist(db, nft)
+    log.info("rule_removed", ip=ip, cidr=cidr, id=rule_id)
