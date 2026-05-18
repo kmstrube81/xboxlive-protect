@@ -326,3 +326,69 @@ async def delete_rule(
 
     reconcile_blocklist(db, nft)
     log.info("rule_removed", ip=ip, cidr=cidr, id=rule_id)
+
+
+# ── POST /rules/{rule_id}/promote ─────────────────────────────────────────────
+
+
+@router.post("/{rule_id}/promote", status_code=status.HTTP_204_NO_CONTENT)
+async def promote_rule(
+    rule_id: int,
+    request: Request,
+    _user: User = Depends(require_password_changed),
+) -> None:
+    """Promote a subscription rule to a local rule.
+
+    Sets ``source='local'`` and clears ``subscription_id``, detaching the rule
+    from its subscription.  The rule survives if the subscription is later
+    removed.
+
+    Idempotent: promoting an already-local rule returns 204 with no changes.
+    Returns 404 if the rule does not exist.  Returns 409 if a local rule for
+    the same ``(ip_address, cidr_prefix)`` already exists (the subscription
+    rule cannot be promoted because its promoted form would duplicate an
+    existing local rule).
+
+    Does not call ``reconcile_blocklist`` — the IP/CIDR stays in the blocklist
+    unchanged; only the attribution changes.
+    """
+    db = _get_db(request)
+
+    rule = db.get(Rule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
+
+    if rule.source == "local":
+        # Idempotent: already local, nothing to do.
+        return
+
+    previous_source = rule.source
+    rule.source = "local"
+    rule.subscription_id = None
+    rule.updated_at = _now()
+
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "rule_already_exists",
+                "message": (
+                    "A local rule for this (ip_address, cidr_prefix) already exists. "
+                    "The subscription rule cannot be promoted."
+                ),
+            },
+        )
+
+    undo_token = uuid.uuid4().hex
+    _write_rule_audit(
+        db,
+        EventType.rule_edited,
+        target=f"{rule.ip_address}/{rule.cidr_prefix}",
+        undo_token=undo_token,
+        details={"id": rule_id, "promoted": True, "previous_source": previous_source},
+    )
+    db.commit()
+    log.info("rule_promoted", id=rule_id, previous_source=previous_source)
