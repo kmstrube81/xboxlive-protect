@@ -19,6 +19,7 @@ import datetime
 import os
 import subprocess
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -192,16 +193,33 @@ def test_service_creates_nft_table_via_systemctl():
 
     deadline = time.monotonic() + 15
     table_found = False
-    while time.monotonic() < deadline:
-        if _service_active() and _nft_table_present("xblp"):
-            table_found = True
-            break
-        time.sleep(0.5)
+    try:
+        while time.monotonic() < deadline:
+            if _service_active() and _nft_table_present("xblp"):
+                table_found = True
+                break
+            time.sleep(0.5)
 
-    assert table_found, (
-        "xblp-api.service did not create table inet xblp within 15 s; "
-        "check: journalctl -u xblp-api -n 30 --no-pager"
-    )
+        assert table_found, (
+            "xblp-api.service did not create table inet xblp within 15 s; "
+            "check: journalctl -u xblp-api -n 30 --no-pager"
+        )
+    finally:
+        # Ensure the xblp table is present for subsequent tests (e.g. test_bridge.py).
+        # If the test passed the service is already active; this loop exits immediately.
+        # If the test failed, wait for Restart=on-failure to bring the service back.
+        restore_deadline = time.monotonic() + 15
+        while time.monotonic() < restore_deadline:
+            if _service_active() and _nft_table_present("xblp"):
+                break
+            time.sleep(0.5)
+        else:
+            warnings.warn(
+                "xblp-api did not recover after nft table removal; "
+                "table inet xblp may be absent for subsequent tests. "
+                "Fix: sudo systemctl start xblp-api",
+                stacklevel=2,
+            )
 
 
 @pytest.fixture
