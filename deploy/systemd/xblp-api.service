@@ -43,6 +43,8 @@ ProtectSystem=full
 # layout symlinks code through /home/pi/Projects/xboxlive-protect into /opt/.
 # Phase 5's image-build pipeline will deploy real code to /opt/xboxlive-protect
 # and can reinstate ProtectHome=true at that point.
+# Baseline security score without ProtectHome (Stage 1): 6.1 MEDIUM
+# (systemd-analyze security xblp-api; ~5.8 expected after reinstatement)
 PrivateTmp=true
 
 [Install]
