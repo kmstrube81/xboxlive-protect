@@ -78,6 +78,15 @@ class RuleResponse(BaseModel):
     updated_at: datetime
 
 
+class RuleList(BaseModel):
+    """Paginated response for GET /rules."""
+
+    total: int
+    items: list[RuleResponse]
+    limit: int
+    offset: int
+
+
 # ── AuditLog ──────────────────────────────────────────────────────────────────
 
 

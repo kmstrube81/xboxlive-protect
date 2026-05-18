@@ -188,6 +188,27 @@ class NftManager:
         self._log.info("allowlist replaced", count=len(entries))
 
 
+class NoopNftManager:
+    """Null-object ``_BlocklistManager`` used when nftables is disabled.
+
+    Route handlers call ``reconcile_blocklist(session, nft_manager)``
+    unconditionally.  On Windows dev or when ``XBLP_NFT_ENABLED=false``,
+    ``app.state.nft_manager`` holds this class, so the reconciler runs its
+    DB-side diff logic but makes no subprocess calls.
+    """
+
+    def list_blocklist(self) -> list[tuple[str, int]]:
+        return []
+
+    def apply_diff(
+        self,
+        table_set: str,
+        to_add: list[tuple[str, int]],
+        to_remove: list[tuple[str, int]],
+    ) -> None:
+        pass
+
+
 def _collapse_entries(entries: list[tuple[str, int]]) -> list[tuple[str, int]]:
     """Merge overlapping and adjacent CIDRs into a minimal non-overlapping set.
 
