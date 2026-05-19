@@ -39,6 +39,7 @@ from xblp_api.middleware import SessionMiddleware
 from xblp_api.routes.auth import router as auth_router
 from xblp_api.routes.peers import router as peers_router
 from xblp_api.routes.rules import router as rules_router
+from xblp_api.routes.status import router as status_router
 from xblp_common import db as db_module
 from xblp_common.migrations import create_tables
 from xblp_common.models import User
@@ -252,5 +253,6 @@ def create_app(
     app.include_router(auth_router)
     app.include_router(rules_router)
     app.include_router(peers_router)
+    app.include_router(status_router)
 
     return app
