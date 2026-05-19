@@ -12,6 +12,7 @@ Lifespan startup sequence:
   5. Create database tables.
   6. Apply the nftables ruleset if absent (skipped on non-Linux).
   7. Seed the default admin user if the users table is empty.
+  8. Reconcile DB → nft blocklist (skipped when nft_enabled=false).
 
 The app is constructed by create_app() so tests can pass a custom Settings
 object and a pre-built SQLAlchemy engine without touching env vars or the
@@ -31,7 +32,7 @@ import structlog
 from fastapi import FastAPI
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session as OrmSession, sessionmaker
 
 from xblp_api.auth.hashing import hash_password
 from xblp_api.config import Settings
@@ -44,6 +45,7 @@ from xblp_common import db as db_module
 from xblp_common.migrations import create_tables
 from xblp_common.models import User
 from xblp_common.nft import NoopNftManager
+from xblp_common.reconcile import reconcile_blocklist
 
 log = structlog.get_logger(__name__)
 
@@ -230,6 +232,15 @@ def create_app(
         create_tables(engine)  # type: ignore[arg-type]
         _app.state.nft_manager = _init_nft_manager(settings)  # type: ignore[arg-type]
         _seed_admin(session_factory, settings)  # type: ignore[arg-type]
+        if settings.nft_enabled:
+            with OrmSession(engine) as _db:  # type: ignore[arg-type]
+                _result = reconcile_blocklist(_db, _app.state.nft_manager)
+            log.info(
+                "startup blocklist sync complete",
+                applied=len(_result.added),
+                removed=len(_result.removed),
+                duration_ms=round(_result.duration_ms, 1),
+            )
         # Expose the engine so route handlers can open fresh sessions (e.g. SSE).
         _app.state.engine = engine
         # SSE concurrency cap counter; checked and incremented per connection.

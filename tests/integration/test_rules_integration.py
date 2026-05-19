@@ -23,6 +23,7 @@ import os
 import platform
 import shutil
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -240,3 +241,40 @@ async def test_microsoft_ip_rejected_as_xbox_live(api_client):
     r = await ac.post("/api/v1/rules", json={"ip_address": "13.107.0.1"})
     assert r.status_code == 422
     assert r.json()["detail"]["reason"] == "xbox-live"
+
+
+async def test_startup_reconcile_syncs_db_rules_to_nft(nft_table):
+    """Rules pre-seeded in DB appear in the nft blocklist after lifespan startup."""
+    from unittest.mock import patch
+
+    engine = _make_engine()
+    settings = _make_settings()
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with Session(engine) as db:
+        db.add(
+            Rule(
+                ip_address="203.0.113.99",
+                cidr_prefix=32,
+                source="local",
+                comment="startup reconcile integration test",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        db.commit()
+
+    app = create_app(settings=settings, engine=engine)
+    ac = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    await ac.__aenter__()
+    ctx = app.router.lifespan_context(app)
+    with patch("xblp_api.app._init_nft_manager", return_value=nft_table):
+        await ctx.__aenter__()
+    try:
+        blocklist = nft_table.list_blocklist()
+        assert any(ip == "203.0.113.99" for ip, _ in blocklist), (
+            f"203.0.113.99 not in blocklist after startup; blocklist={blocklist}"
+        )
+    finally:
+        await ctx.__aexit__(None, None, None)
+        await ac.__aexit__(None, None, None)

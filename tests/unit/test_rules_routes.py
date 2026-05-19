@@ -705,3 +705,36 @@ async def test_promoted_rule_can_be_deleted(client):
     assert r1.status_code == 204
     r2 = await ac.delete(f"/api/v1/rules/{rule.id}")
     assert r2.status_code == 204
+
+
+# ── Startup reconcile ─────────────────────────────────────────────────────────
+
+
+async def test_startup_reconcile_applies_db_rules_to_nft():
+    """Rules in DB before startup are applied to the (mocked) nft blocklist during lifespan."""
+    from unittest.mock import MagicMock, patch
+
+    engine = _make_engine()
+    with Session(engine) as db:
+        db.add(_make_rule("203.0.113.10", cidr=32))
+        db.commit()
+
+    mock_nft = MagicMock()
+    mock_nft.list_blocklist.return_value = []
+
+    settings = _make_settings(nft_enabled=True)
+    app = create_app(settings=settings, engine=engine)
+
+    transport = ASGITransport(app=app)
+    ac = AsyncClient(transport=transport, base_url="http://test")
+    await ac.__aenter__()
+    ctx = app.router.lifespan_context(app)
+    with patch("xblp_api.app._init_nft_manager", return_value=mock_nft):
+        await ctx.__aenter__()
+    try:
+        mock_nft.apply_diff.assert_called_once_with(
+            "blocklist", [("203.0.113.10", 32)], []
+        )
+    finally:
+        await ctx.__aexit__(None, None, None)
+        await ac.__aexit__(None, None, None)
