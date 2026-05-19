@@ -114,7 +114,8 @@ _green "  xblp site enabled, default site disabled"
 
 _step "Installing systemd units"
 
-cp "$REPO_DIR/deploy/systemd/xblp-api.service" /etc/systemd/system/xblp-api.service
+cp "$REPO_DIR/deploy/systemd/xblp-api.service"     /etc/systemd/system/xblp-api.service
+cp "$REPO_DIR/deploy/systemd/xblp-capture.service" /etc/systemd/system/xblp-capture.service
 
 mkdir -p /etc/systemd/system/nginx.service.d
 cp "$REPO_DIR/deploy/systemd/nginx.service.d/xblp.conf" \
@@ -162,6 +163,33 @@ systemctl enable --now nginx.service
 systemctl restart nginx.service
 _green "  nginx running"
 
+# ── 9. Capture daemon config + enable ────────────────────────────────────────
+
+_step "Configuring xblp-capture"
+
+ETC_DIR=/etc/xboxlive-protect
+mkdir -p "$ETC_DIR"
+
+# Create capture.env with sensible defaults if it doesn't already exist.
+# Edit this file to set the real Xbox IP and active profile, then:
+#   systemctl daemon-reload && systemctl restart xblp-capture
+if [[ ! -f "$ETC_DIR/capture.env" ]]; then
+    cat > "$ETC_DIR/capture.env" <<'ENVEOF'
+# xblp-capture runtime configuration
+# Edit these values for your network and game, then:
+#   systemctl daemon-reload && systemctl restart xblp-capture
+XBLP_XBOX_IP=192.168.1.100
+XBLP_PROFILE=mw2-x360
+ENVEOF
+    _green "  created $ETC_DIR/capture.env (edit XBLP_XBOX_IP before starting)"
+else
+    _yellow "  $ETC_DIR/capture.env already exists, skipping"
+fi
+
+_step "Enabling and starting xblp-capture"
+systemctl enable --now xblp-capture.service
+_green "  xblp-capture enabled"
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 printf '\n'
@@ -171,4 +199,8 @@ _green " Open https://xboxlive-protect.local in a browser."
 _green " Accept the self-signed cert warning (one-time)."
 _green " Default credentials: admin / xboxlive-protect"
 _green " Change the password immediately."
+_green ""
+_yellow " ACTION REQUIRED: edit /etc/xboxlive-protect/capture.env"
+_yellow " Set XBLP_XBOX_IP to your Xbox's LAN IP address."
+_yellow " Then: systemctl daemon-reload && systemctl restart xblp-capture"
 _green "======================================================================"

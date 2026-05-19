@@ -1,0 +1,50 @@
+[Unit]
+Description=xboxlive-protect capture daemon
+Documentation=https://github.com/kstrube/xboxlive-protect/blob/main/docs/development.md
+# Must come up after the bridge interface exists so br0 is sniffable.
+After=network-online.target xblp-bridge-rollback.service
+Wants=network-online.target
+# Independent of xblp-api per architectural decision (DESIGN.md §4.2):
+# either daemon can restart without the other; both share state.db via WAL.
+
+[Service]
+Type=simple
+User=xblp
+Group=xblp
+WorkingDirectory=/opt/xboxlive-protect
+Environment=PYTHONPATH=/opt/xboxlive-protect/src PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+
+# Capture-specific defaults; override in /etc/xboxlive-protect/capture.env
+# (create that file and run: systemctl daemon-reload && systemctl restart xblp-capture)
+Environment=XBLP_XBOX_IP=192.168.1.100
+Environment=XBLP_PROFILE=mw2-x360
+EnvironmentFile=-/etc/xboxlive-protect/capture.env
+
+ExecStart=/opt/xboxlive-protect/venv/bin/python -m xblp_capture \
+    --interface br0 \
+    --xbox-ip ${XBLP_XBOX_IP} \
+    --profile ${XBLP_PROFILE}
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xblp-capture
+
+# Same StateDirectory as xblp-api — both daemons share the same DB file.
+StateDirectory=xboxlive-protect
+
+# CAP_NET_ADMIN: required to set promiscuous mode on br0.
+# CAP_NET_RAW:   required by scapy for raw socket capture.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=true
+
+# Mirror xblp-api.service hardening (see CHANGELOG Stage 1 notes).
+ProtectSystem=full
+# ProtectHome=true omitted: same reason as xblp-api.service — dev install
+# symlinks code through /home/pi.  Phase 5 image builder reinstates it.
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
