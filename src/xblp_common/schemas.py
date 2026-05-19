@@ -121,3 +121,56 @@ class DetectedHostEntry(BaseModel):
     asn: str | None
     country_code: str | None
     was_blocked: bool
+
+
+# ── Peers (Phase 2 Stage 3) ───────────────────────────────────────────────────
+
+
+class PeerSnapshotItem(BaseModel):
+    """One peer's stats from a single capture tick.
+
+    Bytes are Xbox-relative:
+      bytes_in  — bytes the Xbox received from this peer
+      bytes_out — bytes the Xbox sent to this peer
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    peer_ip: str
+    pps: float
+    pps_5s: float
+    score: float
+    flagged: bool
+    bytes_in: int
+    bytes_out: int
+    first_seen_at: datetime
+    last_seen_at: datetime
+
+
+class PeersResponse(BaseModel):
+    """Response shape for GET /api/v1/peers and SSE peer events."""
+
+    captured_at: datetime | None
+    peers: list[PeerSnapshotItem]
+    count: int
+
+
+# ── Status (Phase 2 Stage 3) ──────────────────────────────────────────────────
+
+
+class RulesCount(BaseModel):
+    total: int
+    local: int
+    subscription: int
+
+
+class StatusResponse(BaseModel):
+    """Response shape for GET /api/v1/status."""
+
+    version: str
+    uptime_seconds: int
+    active_profile: str | None
+    capture_status: str           # 'active' | 'stale' | 'missing'
+    capture_last_seen: datetime | None
+    rules_count: RulesCount
+    blocklist_size: int

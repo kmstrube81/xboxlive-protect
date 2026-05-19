@@ -135,6 +135,60 @@ class DetectedHost(Base):
     was_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
+# ── Capture IPC models (Phase 2 Stage 3) ─────────────────────────────────────
+# Written by xblp-capture at 1 Hz; read by xblp-api for /peers and /status.
+# Both daemons share the same SQLite database (WAL mode handles concurrent R/W).
+
+
+class PeerSnapshot(Base):
+    """One row per active peer per capture tick (1 Hz).
+
+    ``captured_at`` is the batch timestamp — all rows from the same tick share
+    the same value.  GET /peers returns the batch with MAX(captured_at).
+
+    Bytes are Xbox-relative:
+      ``bytes_in``  — bytes the Xbox *received* from this peer
+      ``bytes_out`` — bytes the Xbox *sent* to this peer
+    """
+
+    __tablename__ = "peer_snapshots"
+    __table_args__ = (Index("ix_peer_snapshots_captured_at", "captured_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Batch timestamp — all peers from one capture tick share this value.
+    captured_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    peer_ip: Mapped[str] = mapped_column(String(15), nullable=False)
+    # pps over the active profile's detection window (typically 10 s)
+    pps: Mapped[float] = mapped_column(Float, nullable=False)
+    # pps over a fixed 5-second look-back window (profile-independent)
+    pps_5s: Mapped[float] = mapped_column(Float, nullable=False)
+    # score = pps * qualified_windows (PeerScorer's composite metric)
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    # True when pps >= min_pps AND qualified_windows >= min_consecutive_windows
+    flagged: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    bytes_in: Mapped[int] = mapped_column(Integer, nullable=False)   # Xbox received
+    bytes_out: Mapped[int] = mapped_column(Integer, nullable=False)  # Xbox sent
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class RuntimeState(Base):
+    """Key-value store for capture-daemon runtime state shared with the API daemon.
+
+    The capture daemon writes known keys at startup and on state changes.
+    The API daemon reads keys when serving /status.
+
+    Known keys:
+      active_profile — profile ID currently loaded by xblp-capture
+    """
+
+    __tablename__ = "runtime_state"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 # ── Auth models (Phase 2) ─────────────────────────────────────────────────────
 
 
