@@ -10,6 +10,9 @@ Design notes:
 - ``tick()`` is idempotent in the sense that no *new* DetectedHost entries are
   returned for the same or non-advancing ``now``.  Any hosts detected on the
   first call have ``already_reported=True``; subsequent calls return [].
+- ``snapshot_stats()`` is a read-only accessor used by the capture daemon to
+  flush per-peer stats to the peer_snapshots DB table once per second.  It
+  does not mutate any scorer state.
 """
 
 from __future__ import annotations
@@ -47,6 +50,28 @@ class DetectedHost:
     last_seen: float  # timestamp of most recent observed packet
 
 
+@dataclass
+class PeerSnapshotStats:
+    """Read-only peer stats snapshot for DB persistence (one row per peer per tick).
+
+    Returned by ``PeerScorer.snapshot_stats()`` — does not mutate scorer state.
+
+    Bytes are Xbox-relative:
+      bytes_in  — total bytes the Xbox *received* from this peer (this session)
+      bytes_out — total bytes the Xbox *sent* to this peer (this session)
+    """
+
+    ip: str
+    pps: float              # pps over the active profile's detection window
+    pps_5s: float           # pps over a fixed 5-second look-back (profile-independent)
+    score: float            # pps * qualified_windows
+    flagged: bool           # pps >= min_pps AND qualified_windows >= min_consecutive_windows
+    bytes_in: int           # Xbox received from peer
+    bytes_out: int          # Xbox sent to peer
+    first_seen: float       # epoch timestamp of first packet
+    last_seen: float        # epoch timestamp of most recent packet
+
+
 # ── Internal state ────────────────────────────────────────────────────────────
 
 
@@ -58,6 +83,9 @@ class _PeerState:
     last_seen: float  # timestamp of most recent observed packet
     qualified_since: float | None = None  # set on first True; cleared when deque all-False
     already_reported: bool = False
+    # Xbox-relative byte counters (session totals, not windowed)
+    bytes_in: int = 0   # bytes Xbox received from this peer
+    bytes_out: int = 0  # bytes Xbox sent to this peer
 
 
 # ── Scorer ────────────────────────────────────────────────────────────────────
@@ -115,6 +143,11 @@ class PeerScorer:
         state.packets.append((event.timestamp, event.length))
         if event.timestamp > state.last_seen:
             state.last_seen = event.timestamp
+        # Accumulate session-total bytes in the Xbox-relative frame.
+        if event.src_ip == self._xbox_ip:
+            state.bytes_out += event.length
+        else:
+            state.bytes_in += event.length
 
     def peer_table(self, now: float) -> list[PeerScore]:
         """Return current peer scores at ``now``, sorted by score descending.
@@ -193,6 +226,51 @@ class PeerScorer:
                 )
 
         return detected
+
+    def snapshot_stats(self, now: float) -> list[PeerSnapshotStats]:
+        """Return snapshot stats for all active peers at ``now``.
+
+        Read-only: does not advance qualification windows or mutate any state.
+        Call once per second from the capture daemon writer immediately after
+        ``tick()`` so the ``flagged`` field reflects the freshly-updated windows.
+
+        ``pps`` uses the active profile's detection window (typically 10 s).
+        ``pps_5s`` uses a fixed 5-second look-back regardless of profile.
+
+        Bytes are Xbox-relative (see ``PeerSnapshotStats`` docstring).
+        """
+        profile_window_start = now - self._profile.detection.window_seconds
+        five_s_window_start = now - 5.0
+        results: list[PeerSnapshotStats] = []
+
+        for ip, state in self._peers.items():
+            profile_window_count = sum(1 for ts, _ in state.packets if ts >= profile_window_start)
+            five_s_count = sum(1 for ts, _ in state.packets if ts >= five_s_window_start)
+
+            pps = profile_window_count / self._profile.detection.window_seconds
+            pps_5s = five_s_count / 5.0
+            qualified_count = sum(state.recent_qualifications)
+            score = pps * qualified_count
+            flagged = (
+                pps >= self._profile.detection.min_pps
+                and qualified_count >= self._profile.detection.min_consecutive_windows
+            )
+
+            results.append(
+                PeerSnapshotStats(
+                    ip=ip,
+                    pps=pps,
+                    pps_5s=pps_5s,
+                    score=score,
+                    flagged=flagged,
+                    bytes_in=state.bytes_in,
+                    bytes_out=state.bytes_out,
+                    first_seen=state.first_seen,
+                    last_seen=state.last_seen,
+                )
+            )
+
+        return results
 
     def prune(self, now: float, retention_seconds: int = 300) -> None:
         """Remove state for peers not seen within ``retention_seconds``.
