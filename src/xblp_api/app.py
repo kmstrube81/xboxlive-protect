@@ -37,6 +37,7 @@ from xblp_api.auth.hashing import hash_password
 from xblp_api.config import Settings
 from xblp_api.middleware import SessionMiddleware
 from xblp_api.routes.auth import router as auth_router
+from xblp_api.routes.peers import router as peers_router
 from xblp_api.routes.rules import router as rules_router
 from xblp_common import db as db_module
 from xblp_common.migrations import create_tables
@@ -218,6 +219,8 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+        import time
+
         log.info("xblp-api starting up")
         _ensure_db_dir(settings)  # type: ignore[arg-type]
         _probe_state_dir_writable(settings)  # type: ignore[arg-type]
@@ -226,6 +229,12 @@ def create_app(
         create_tables(engine)  # type: ignore[arg-type]
         _app.state.nft_manager = _init_nft_manager(settings)  # type: ignore[arg-type]
         _seed_admin(session_factory, settings)  # type: ignore[arg-type]
+        # Expose the engine so route handlers can open fresh sessions (e.g. SSE).
+        _app.state.engine = engine
+        # SSE concurrency cap counter; checked and incremented per connection.
+        _app.state.sse_client_count = 0
+        # Uptime baseline for GET /status.
+        _app.state.start_time = time.monotonic()
         log.info("xblp-api startup complete")
         yield
         log.info("xblp-api shutting down")
@@ -242,5 +251,6 @@ def create_app(
 
     app.include_router(auth_router)
     app.include_router(rules_router)
+    app.include_router(peers_router)
 
     return app
