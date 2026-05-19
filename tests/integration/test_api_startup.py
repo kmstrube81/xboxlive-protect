@@ -31,6 +31,7 @@ from xblp_api.app import _DEFAULT_ADMIN_USERNAME, create_app
 from xblp_api.config import Settings
 from xblp_common.migrations import create_tables
 from xblp_common.models import User
+from xblp_common.nft import NoopNftManager
 
 _TEST_TABLE = "xblp_test_api"  # avoid clobbering a production xblp table
 
@@ -93,11 +94,14 @@ async def test_startup_installs_nft_table_when_absent(monkeypatch):
     settings = _make_settings()
     engine = _fresh_engine()
 
-    # Patch NftManager to use xblp_test table so we don't touch production
-    monkeypatch.setattr(
-        "xblp_api.app._apply_nft_ruleset",
-        lambda s: NftManager(table=_TEST_TABLE).apply_initial_ruleset(),
-    )
+    # Redirect nft bootstrap to the test table.  _init_nft_manager must return
+    # a manager object (stored on app.state.nft_manager for route handlers).
+    def _use_test_table(s):
+        mgr = NftManager(table=_TEST_TABLE)
+        mgr.apply_initial_ruleset()
+        return mgr
+
+    monkeypatch.setattr("xblp_api.app._init_nft_manager", _use_test_table)
 
     assert not _nft_table_present(_TEST_TABLE)
 
@@ -119,10 +123,12 @@ async def test_startup_nft_is_noop_when_table_already_present(monkeypatch):
     mgr.apply_initial_ruleset()
     assert _nft_table_present(_TEST_TABLE)
 
-    monkeypatch.setattr(
-        "xblp_api.app._apply_nft_ruleset",
-        lambda s: NftManager(table=_TEST_TABLE).apply_initial_ruleset(),
-    )
+    def _use_test_table(s):
+        mgr = NftManager(table=_TEST_TABLE)
+        mgr.apply_initial_ruleset()
+        return mgr
+
+    monkeypatch.setattr("xblp_api.app._init_nft_manager", _use_test_table)
 
     app = create_app(settings=settings, engine=engine)
     async with app.router.lifespan_context(app):
@@ -133,7 +139,7 @@ async def test_startup_nft_is_noop_when_table_already_present(monkeypatch):
 @pytest.mark.linux
 async def test_default_admin_seeded_on_fresh_db(monkeypatch):
     """Fresh DB seeds admin; restart (second lifespan) doesn't duplicate."""
-    monkeypatch.setattr("xblp_api.app._apply_nft_ruleset", lambda s: None)
+    monkeypatch.setattr("xblp_api.app._init_nft_manager", lambda s: NoopNftManager())
 
     settings = _make_settings()
     engine = _fresh_engine()
