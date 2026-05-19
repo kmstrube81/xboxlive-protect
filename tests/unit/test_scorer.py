@@ -78,11 +78,14 @@ def _pump(
     count: int,
     t_start: float,
     t_end: float,
+    length: int = 100,
 ) -> None:
     """Observe ``count`` evenly-spaced packets between t_start and t_end (exclusive)."""
     step = (t_end - t_start) / count
     for i in range(count):
-        scorer.observe(_pkt(src_ip=src_ip, dst_ip=dst_ip, timestamp=t_start + i * step))
+        scorer.observe(
+            _pkt(src_ip=src_ip, dst_ip=dst_ip, timestamp=t_start + i * step, length=length)
+        )
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
@@ -311,3 +314,87 @@ def test_peer_drops_out_of_host_status() -> None:
 
     table = scorer.peer_table(now=BASE + 7.0)
     assert table[0].qualified_recent_windows == 0
+
+
+# ── snapshot_stats() ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.unit
+def test_snapshot_stats_empty_when_no_peers() -> None:
+    scorer = PeerScorer(xbox_ip=XBOX, profile=_profile())
+    assert scorer.snapshot_stats(now=BASE) == []
+
+
+@pytest.mark.unit
+def test_snapshot_stats_bytes_xbox_relative() -> None:
+    """bytes_out = Xbox sent to peer; bytes_in = Xbox received from peer."""
+    scorer = PeerScorer(xbox_ip=XBOX, profile=_profile(window_seconds=1))
+    # Xbox → PEER_A: 3 packets × 100 bytes = 300 bytes_out
+    _pump(scorer, XBOX, PEER_A, 3, BASE, BASE + 0.1, length=100)
+    # PEER_A → Xbox: 2 packets × 200 bytes = 400 bytes_in
+    _pump(scorer, PEER_A, XBOX, 2, BASE + 0.2, BASE + 0.3, length=200)
+
+    stats = scorer.snapshot_stats(now=BASE + 1.0)
+    assert len(stats) == 1
+    s = stats[0]
+    assert s.ip == PEER_A
+    assert s.bytes_out == 300   # Xbox sent
+    assert s.bytes_in == 400    # Xbox received
+
+
+@pytest.mark.unit
+def test_snapshot_stats_pps_fields() -> None:
+    """pps uses the profile window; pps_5s uses a fixed 5-second window.
+
+    10 packets in [BASE+5, BASE+10) so they fall within both the 10s profile
+    window and the 5s look-back window at now=BASE+10.
+    pps   = 10 packets / 10s = 1.0
+    pps_5s = 10 packets / 5s  = 2.0
+    """
+    p = _profile(min_pps=1, window_seconds=10, min_consecutive_windows=1)
+    scorer = PeerScorer(xbox_ip=XBOX, profile=p)
+    _pump(scorer, XBOX, PEER_A, 10, BASE + 5.0, BASE + 10.0, length=100)
+    scorer.tick(now=BASE + 10.0)
+
+    stats = scorer.snapshot_stats(now=BASE + 10.0)
+    assert len(stats) == 1
+    s = stats[0]
+    assert abs(s.pps - 1.0) < 0.1
+    assert abs(s.pps_5s - 2.0) < 0.1
+
+
+@pytest.mark.unit
+def test_snapshot_stats_flagged_when_above_threshold() -> None:
+    p = _profile(min_pps=1, window_seconds=1, min_consecutive_windows=1)
+    scorer = PeerScorer(xbox_ip=XBOX, profile=p)
+    _pump(scorer, XBOX, PEER_A, 10, BASE, BASE + 1.0)
+    scorer.tick(now=BASE + 1.0)
+
+    stats = scorer.snapshot_stats(now=BASE + 1.0)
+    assert stats[0].flagged is True
+
+
+@pytest.mark.unit
+def test_snapshot_stats_not_flagged_below_threshold() -> None:
+    p = _profile(min_pps=100, window_seconds=1, min_consecutive_windows=1)
+    scorer = PeerScorer(xbox_ip=XBOX, profile=p)
+    # Only 5 packets — pps = 5, below min_pps=100
+    _pump(scorer, XBOX, PEER_A, 5, BASE, BASE + 1.0)
+    scorer.tick(now=BASE + 1.0)
+
+    stats = scorer.snapshot_stats(now=BASE + 1.0)
+    assert stats[0].flagged is False
+
+
+@pytest.mark.unit
+def test_snapshot_stats_does_not_mutate_scorer() -> None:
+    """Calling snapshot_stats() does not change tick() output."""
+    scorer = PeerScorer(xbox_ip=XBOX, profile=_profile(window_seconds=1, min_consecutive_windows=1))
+    _pump(scorer, XBOX, PEER_A, 50, BASE, BASE + 1.0)
+    scorer.tick(now=BASE + 1.0)
+    # snapshot_stats() called twice; second call should return same data
+    stats1 = scorer.snapshot_stats(now=BASE + 1.0)
+    stats2 = scorer.snapshot_stats(now=BASE + 1.0)
+    assert stats1[0].pps == stats2[0].pps
+    assert stats1[0].bytes_in == stats2[0].bytes_in
+    assert stats1[0].bytes_out == stats2[0].bytes_out

@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 2, Stage 3: capture↔API IPC + live peer endpoint with SSE
+
+- **`PeerSnapshot` model** — one row per active peer per 1 Hz capture tick.
+  Columns: `captured_at` (indexed batch timestamp), `peer_ip`, `pps` (profile
+  window), `pps_5s` (fixed 5-second look-back), `score`, `flagged`,
+  `bytes_in` / `bytes_out` (Xbox-relative; see below), `first_seen_at`,
+  `last_seen_at`.  Created by `create_tables()` on next startup, no separate
+  migration step.
+- **`RuntimeState` model** — key-value store for capture daemon runtime state.
+  `key='active_profile'` is written by xblp-capture at startup so the API
+  daemon can read the active profile name for `GET /status`.
+- **`PeerScorer` additions** (`scorer.py`):
+  - `bytes_in` / `bytes_out` accumulators on `_PeerState`.  Updated in
+    `observe()` using the Xbox-relative convention: packet where
+    `src_ip == xbox_ip` → `bytes_out`; packet where `dst_ip == xbox_ip` →
+    `bytes_in`.  "bytes_in = bytes the Xbox received" is the Live screen's
+    natural frame of reference ("peer X is sending you 50 kbps").
+  - `snapshot_stats(now) → list[PeerSnapshotStats]` — read-only pass over
+    `_peers` returning per-peer stats for DB persistence.  Computes
+    `pps_5s` from the same packet deque with a fixed 5s window.  Does not
+    mutate qualification windows; call after `tick()`.
+- **`flush_peer_snapshots()`** (`persistence.py`) — writes one `PeerSnapshot`
+  row per peer and prunes rows older than 5 minutes (time-based window) in
+  one commit.  Called at 1 Hz from the capture daemon main loop.
+- **`write_active_profile()`** (`persistence.py`) — upserts
+  `runtime_state[active_profile]`; called at daemon startup.
+- **Capture daemon** (`__main__.py`) — evolved to full production daemon:
+  - `--db-path` / `--no-db` args (`--no-db` preserves manual validation mode).
+  - Opens `state.db` at startup; calls `write_active_profile()`.
+  - Calls `flush_peer_snapshots()` every `_SNAPSHOT_INTERVAL` (1s) after
+    `tick()`.
+  - Persists detected hosts via `record_detected_host()`.
+- **`xblp-capture.service`** — new systemd unit with `CAP_NET_ADMIN +
+  CAP_NET_RAW`, `ProtectSystem=full`, `PrivateTmp`, `NoNewPrivileges`.
+  Ordered after `network-online.target + xblp-bridge-rollback.service`.
+  Independent of `xblp-api.service` (either daemon can restart without the
+  other).  Runtime config via `EnvironmentFile=/etc/xboxlive-protect/capture.env`
+  (`XBLP_XBOX_IP`, `XBLP_PROFILE`).
+- **`install-stage1.sh` extension** — new step 9: installs capture unit, creates
+  `/etc/xboxlive-protect/capture.env` with placeholder defaults if absent,
+  enables and starts `xblp-capture.service`.
+- **`GET /api/v1/peers`** — returns `MAX(captured_at)` batch from
+  `peer_snapshots`.  200 with empty list when capture daemon has not yet run.
+  Response: `{captured_at, peers: [...], count}`.
+- **`GET /api/v1/peers/stream`** — Server-Sent Events at ~1 Hz.  Event format:
+  `event: peers\ndata: {...}\n\n` (same JSON shape as `GET /peers`).  Fresh
+  ORM session per tick (no long-held connection).  Concurrency cap: 503 when
+  10 clients already connected.  `Cache-Control: no-cache`,
+  `X-Accel-Buffering: no` headers.  Client disconnect handled cleanly via
+  `GeneratorExit` / `CancelledError`.
+- **`GET /api/v1/status`** — system health: `version`, `uptime_seconds`,
+  `active_profile`, `capture_status` (`active` / `stale` / `missing` based on
+  3-second threshold), `capture_last_seen`, `rules_count` (total/local/
+  subscription), `blocklist_size` (live `len(nft_manager.list_blocklist())`).
+- **nginx** — activated the `/api/v1/peers/stream` SSE location block (was
+  stubbed since Stage 1): `proxy_buffering off`, `proxy_read_timeout 1d`.
+- **`app.state` additions** — `engine`, `sse_client_count`, `start_time`
+  stored in lifespan startup.
+- **39 new unit tests** — PeerSnapshot round-trip, all GET /peers / GET
+  /peers/stream / GET /status cases (auth gates, forced-password gate,
+  capture_status variants, rules_count, response shape, SSE event format,
+  503 cap).  snapshot_stats() behaviour tested in `test_scorer.py` (6 new
+  tests).  All run on Windows.
+- **4 integration tests** (R4S, `pytest -m integration`): DB schema accessible,
+  GET /peers shape, GET /peers/stream events ≥3 over 3.5 s, GET /status shape
+  with live `capture_status='active'`.
+- **`docs/api-peers.md`** and **`docs/api-status.md`** — endpoint references.
+
 ### Added — Phase 2, Stage 2: Rules endpoints
 
 - **Rules API** — five endpoints under `/api/v1/rules`:
