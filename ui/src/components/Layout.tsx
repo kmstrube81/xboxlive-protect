@@ -52,7 +52,7 @@ export default function Layout({ children, version, captureStatus }: LayoutProps
         {captureStatus ? <span>capture: {captureStatus}</span> : null}
         {(version ?? captureStatus) ? <span className="mx-2">·</span> : null}
         <a
-          href="https://github.com/kstrube/xboxlive-protect"
+          href="https://github.com/kmstrube81/xboxlive-protect"
           target="_blank"
           rel="noopener noreferrer"
           className="underline hover:text-slate-700 dark:hover:text-slate-200"

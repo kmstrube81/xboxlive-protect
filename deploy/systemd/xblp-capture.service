@@ -1,6 +1,6 @@
 [Unit]
 Description=xboxlive-protect capture daemon
-Documentation=https://github.com/kstrube/xboxlive-protect/blob/main/docs/development.md
+Documentation=https://github.com/kmstrube81/xboxlive-protect/blob/main/docs/development.md
 # Must come up after the bridge interface exists so br0 is sniffable.
 After=network-online.target xblp-bridge-rollback.service
 Wants=network-online.target

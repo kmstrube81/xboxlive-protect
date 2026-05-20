@@ -278,4 +278,4 @@ Phase 1 delivered:
 
 Phase 1 test counts at handoff: 120 unit tests, 19 integration tests passing.
 
-[Unreleased]: https://github.com/kstrube/xboxlive-protect/compare/HEAD...HEAD
+[Unreleased]: https://github.com/kmstrube81/xboxlive-protect/compare/HEAD...HEAD

@@ -1,6 +1,6 @@
 [Unit]
 Description=xboxlive-protect API daemon
-Documentation=https://github.com/kstrube/xboxlive-protect/blob/main/docs/api-auth.md
+Documentation=https://github.com/kmstrube81/xboxlive-protect/blob/main/docs/api-auth.md
 After=network-online.target
 Wants=network-online.target
 
