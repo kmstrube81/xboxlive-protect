@@ -29,7 +29,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response as StarletteResponse
+from starlette.types import Scope
 from sqlalchemy import Engine, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session as OrmSession, sessionmaker
@@ -48,6 +52,24 @@ from xblp_common.nft import NoopNftManager
 from xblp_common.reconcile import reconcile_blocklist
 
 log = structlog.get_logger(__name__)
+
+
+class _SPAStaticFiles(StaticFiles):
+    """StaticFiles subclass that returns index.html for any 404.
+
+    Starlette's built-in StaticFiles(html=True) serves index.html only for
+    directory paths (e.g. /), not for arbitrary SPA routes like /dashboard.
+    This subclass catches the 404 from get_response and falls back to the
+    root index.html, which is the standard SPA pattern.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> StarletteResponse:  # type: ignore[override]
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
 
 _DEFAULT_ADMIN_USERNAME = "admin"
 _DEFAULT_ADMIN_PASSWORD = "xboxlive-protect"
@@ -265,5 +287,22 @@ def create_app(
     app.include_router(rules_router)
     app.include_router(peers_router)
     app.include_router(status_router)
+
+    # /api/v1 catch-all: must be registered BEFORE the StaticFiles mount so
+    # that a typo'd API path (e.g. /api/v1/typo) returns a JSON 404 rather
+    # than index.html from the SPA fallback.
+    @app.get("/api/v1/{path:path}", include_in_schema=False)
+    async def _api_catch_all(path: str) -> None:  # noqa: ARG001
+        raise HTTPException(status_code=404, detail=f"/api/v1/{path} not found")
+
+    # UI static files — mounted last so all API routes take priority.
+    # StaticFiles(html=True) serves index.html for any path that doesn't match
+    # a real file, providing the SPA fallback for client-side routing.
+    ui_path = Path(settings.ui_dist_path)
+    if ui_path.exists() and (ui_path / "index.html").exists():
+        app.mount("/", _SPAStaticFiles(directory=str(ui_path), html=True), name="ui")
+        log.info("ui static files mounted", path=str(ui_path))
+    else:
+        log.warning("ui dist not found, skipping static mount", path=str(ui_path))
 
     return app

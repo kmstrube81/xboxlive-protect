@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     argon2_memory_cost: int = 65536  # 64 MiB
     argon2_parallelism: int = 2
 
+    # UI static assets — path to ui/dist produced by `npm run build`.
+    # FastAPI mounts StaticFiles here with html=True for SPA fallback.
+    # When the path doesn't exist (no build yet) the daemon starts cleanly
+    # and logs a warning; api/v1/* routes are unaffected.
+    ui_dist_path: str = "/opt/xboxlive-protect/ui/dist"
+
 
 def get_settings() -> Settings:
     return Settings()
