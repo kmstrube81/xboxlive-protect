@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 2, Stage 4: React UI scaffolding + auth screens
+
+- **`ui/` directory** — Vite 5 + React 18 + TypeScript 5 SPA with Tailwind CSS 3
+  and TanStack React Query v5. Build output at `ui/dist/`.
+- **Vite dev server proxy** — `/api/*` forwarded to
+  `https://xboxlive-protect.local` (`secure: false` for the self-signed cert).
+  A `proxyRes` hook strips the `Secure` cookie flag so sessions work over
+  plain `http://localhost:5173`. Override the proxy target via
+  `VITE_API_TARGET=https://<ip>` in `ui/.env.local`.
+- **API client** (`ui/src/api/client.ts`) — typed `fetch` wrapper; throws
+  `ApiError(status, message, body)` on non-2xx; network failures surface as
+  `ApiError(0, "Couldn't reach the server")`.
+- **`useAuth` hook** — React Query over `GET /api/v1/auth/me`; returns
+  `{user, isAuthenticated, mustChangePassword, isLoading}`.
+- **`RequireAuth`** — Outlet-based v6 route guard: spinner while loading,
+  redirect to `/login` when not authenticated, redirect to `/change-password`
+  when `must_change_password=true` (skips the redirect when already on
+  `/change-password`).
+- **Login screen** — username/password form; redirects already-authenticated
+  users away immediately (to `/change-password` if forced, `/` otherwise);
+  displays API and network errors via `role=alert`.
+- **ChangePassword screen** — three-field form (current, new, confirm);
+  client-side confirmation check; navigates to `/` on success.
+- **Dashboard screen** (placeholder) — fetches `GET /api/v1/status` every 10 s;
+  displays version, capture status, active profile, rule count, uptime. Stage 5
+  will add the Live/Rules/History screens.
+- **Layout shell** — sticky top bar with logout button; footer with
+  version/capture_status and GitHub link; mobile-first, max-w-4xl content area.
+- **28 Vitest tests** (Windows-runnable):
+  - `client.test.ts` (7): 2xx, 4xx, 5xx, network failure, 204, Content-Type header
+  - `useAuth.test.tsx` (4): loading, authenticated, must_change_password, 401
+  - `RequireAuth.test.tsx` (5): children/redirect/spinner cases
+  - `Login.test.tsx` (7): submit happy paths, error cases, already-authenticated
+    redirects
+  - `ChangePassword.test.tsx` (5): success, mismatch, wrong password, network error
+- **FastAPI `_SPAStaticFiles`** — `StaticFiles` subclass that catches Starlette's
+  `HTTPException(404)` from `get_response` and falls back to `index.html`,
+  enabling SPA client-side routing. Starlette 1.0's built-in `html=True` only
+  serves `index.html` for directory paths, not arbitrary routes.
+- **`/api/v1/{path:path}` catch-all** — registered before the StaticFiles mount;
+  returns JSON `404` for malformed API paths instead of `index.html`, so
+  curl/automation gets a debuggable error rather than `Unexpected token <`.
+- **`XBLP_UI_DIST_PATH` setting** — path to the built `ui/dist/` tree (default
+  `/opt/xboxlive-protect/ui/dist`). Daemon starts cleanly and logs a warning
+  when the path doesn't exist; API routes are unaffected.
+- **`deploy/install-stage1.sh`** — new step 2a: installs `nodejs` + `npm` via
+  `apt-get` (Debian 12 ships 18.19/9.2, satisfying Vite 5's Node ≥ 18
+  requirement), then runs `npm ci` and `npm run build` from `$XBLP_SRC_ROOT/ui`.
+  Build failure causes the installer to exit 1 (inherited from `set -euo pipefail`).
+- **7 new Python unit tests** (`test_ui_static.py`, Windows-runnable):
+  static mount serves HTML, SPA fallback works, API routes not shadowed,
+  `/api/v1` typo returns JSON 404, daemon starts without ui/dist.
+- **`docs/ui-development.md`** — dev server setup, cookie story, proxy override,
+  build output, project structure, SPA routing notes.
+- **`docs/development.md`** — added Node.js to requirements, self-signed cert
+  warning walkthrough (per-browser click-through steps).
+
 ### Added — Phase 2, Stage 3: capture↔API IPC + live peer endpoint with SSE
 
 - **`PeerSnapshot` model** — one row per active peer per 1 Hz capture tick.

@@ -3,6 +3,7 @@
 ## Requirements
 
 - Python 3.11 or newer (3.11 is the minimum; match what ships on Debian 12 Bookworm)
+- Node.js 18+ and npm (for the React UI — see [docs/ui-development.md](ui-development.md))
 - A POSIX-like shell for the `make` targets; on Windows use WSL or run commands directly
 
 ## Setup
@@ -186,7 +187,30 @@ This script:
 
 The script is idempotent — safe to re-run on an already-installed system. See `deploy/install-stage1.sh` for the full step list; it is the authoritative spec for the Phase 5 SD image builder.
 
-After the script completes, open `https://xboxlive-protect.local` in a browser, accept the self-signed cert warning (one-time), and log in with the default credentials (`admin` / `xboxlive-protect`). You will be required to change the password immediately.
+After the script completes, open `https://xboxlive-protect.local` in a browser. You will see a certificate warning on first visit — see [Self-signed cert warning](#self-signed-cert-warning) below. After accepting it, log in with the default credentials (`admin` / `xboxlive-protect`). You will be required to change the password immediately.
+
+## Self-signed cert warning
+
+The device uses a self-signed TLS certificate generated at first startup. Every
+browser will show a "Your connection isn't private" or similar warning on first
+visit.
+
+**How to proceed (one-time per browser):**
+
+| Browser | Steps |
+|---------|-------|
+| Chrome / Edge | Click **Advanced** → **Proceed to xboxlive-protect.local (unsafe)** |
+| Firefox | Click **Advanced…** → **Accept the Risk and Continue** |
+| Safari | Click **Show Details** → **visit this website** → **Visit Website** |
+| iOS Safari | Tap **Show Details** → **visit this website** → confirm in Settings |
+
+After clicking through, the browser remembers the exception for the session.
+You may need to repeat this after clearing browser data or on a new device.
+
+The certificate is valid for 10 years from generation and covers both
+`xboxlive-protect.local` and `xboxlive-protect` as Subject Alternative Names.
+Permanent OS-level trust (importing the cert as a CA) is Phase 5 polish and not
+required for normal use.
 
 ## Gotchas
 
