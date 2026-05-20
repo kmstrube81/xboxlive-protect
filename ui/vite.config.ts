@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // https://vite.dev/config/
@@ -21,7 +21,7 @@ export default defineConfig({
           proxy.on("proxyRes", (proxyRes) => {
             const cookies = proxyRes.headers["set-cookie"];
             if (cookies) {
-              proxyRes.headers["set-cookie"] = cookies.map((c) =>
+              proxyRes.headers["set-cookie"] = cookies.map((c: string) =>
                 c.replace(/;\s*Secure/gi, ""),
               );
             }
