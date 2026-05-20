@@ -77,8 +77,19 @@ _green "  python OK: $(readlink -f "$INSTALL_DIR/venv/bin/python")"
 
 # ── 2. Dependencies ───────────────────────────────────────────────────────────
 
-_step "Installing nginx"
-apt-get install -y nginx
+_step "Installing nginx, Node.js, and npm"
+# Debian 12 ships nodejs 18.19 + npm 9.2, which meet Vite 5's Node ≥ 18 requirement.
+apt-get install -y nginx nodejs npm
+_green "  node $(node --version), npm $(npm --version)"
+
+# ── 2a. Build UI ─────────────────────────────────────────────────────────────
+# The FastAPI daemon mounts ui/dist as a StaticFiles tree (see XBLP_UI_DIST_PATH).
+# Build it now so the daemon can serve the UI on first run.
+
+_step "Building UI (npm ci + npm run build)"
+npm --prefix "$XBLP_SRC_ROOT/ui" ci
+npm --prefix "$XBLP_SRC_ROOT/ui" run build
+_green "  ui/dist built"
 
 # ── 3. Service user ───────────────────────────────────────────────────────────
 
