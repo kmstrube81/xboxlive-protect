@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { authApi } from "../api/auth";
+import { authApi, type MeResponse } from "../api/auth";
 import { AUTH_QUERY_KEY } from "../hooks/useAuth";
 import Button from "./Button";
 
@@ -17,8 +17,9 @@ export default function Layout({ children, version, captureStatus }: LayoutProps
 
   const logoutMutation = useMutation({
     mutationFn: authApi.logout,
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEY });
+    onSettled: () => {
+      queryClient.setQueryData<MeResponse | null>(AUTH_QUERY_KEY, null);
+      queryClient.removeQueries({ queryKey: AUTH_QUERY_KEY });
       navigate("/login", { replace: true });
     },
   });
