@@ -25,11 +25,11 @@ export default function Layout({ children, version, captureStatus }: LayoutProps
   });
 
   return (
-    <div className="flex min-h-screen flex-col overflow-x-hidden bg-slate-50 dark:bg-slate-900">
+    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-900">
       {/* Top bar */}
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-y-1 px-4 py-3">
-          <span className="min-w-0 font-semibold text-slate-800 dark:text-slate-100">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-2 px-4 py-3 sm:gap-4 sm:px-6 lg:px-8">
+          <span className="min-w-0 truncate text-base font-semibold text-slate-800 sm:text-lg dark:text-slate-100">
             xboxlive-protect
           </span>
           <Button
@@ -44,7 +44,7 @@ export default function Layout({ children, version, captureStatus }: LayoutProps
       </header>
 
       {/* Page content */}
-      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-3 text-center text-xs text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
