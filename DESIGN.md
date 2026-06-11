@@ -753,6 +753,34 @@ These should be resolved before or during implementation:
 
 ---
 
+## 18. Accessibility Followups
+
+### iPhone Zoomed Display Mode (deferred from Phase 2 Stage 4)
+
+iPhone has an accessibility setting (Settings → Display & Brightness → Display Zoom → Larger Text / Zoomed) that scales rendered web content above its declared viewport size. The browser still reports the standard CSS viewport width to JavaScript and media queries, so Tailwind responsive breakpoints fire normally — but the visible rendered output is scaled, causing leading-edge content to clip outside the visible area.
+
+Symptoms observed on iPhone 15 in Zoomed Display Mode:
+- Header title "xboxlive-protect" clips to "boxlive-protect"
+- Page heading "Dashboard" clips to "ashboard"
+- After login, page auto-scrolls to bottom rather than top
+- Login screen has unusual vertical spacing
+
+Not reproducible in:
+- Browser devtools device emulator at any viewport width
+- iPhone in Standard Display Mode
+- Android devices
+- Desktop browsers
+
+Approaches not yet tried:
+- `dvw`/`svw` viewport units with explicit overflow-anchor handling
+- `@media (resolution: ...)` queries detecting display zoom
+- Manual scroll position management after successful auth state transitions
+- Physical-device debugging via Safari Web Inspector + USB
+
+Owner: deferred to Phase 5 polish (alongside cert trust walkthrough and other UX polish). Requires physical iPhone testing with each iteration — cannot be verified in devtools.
+
+---
+
 ## Appendix A — Glossary
 
 - **Bridge:** Layer 2 network device that forwards frames between two physical interfaces transparently. The Xbox sees the network as if directly connected.

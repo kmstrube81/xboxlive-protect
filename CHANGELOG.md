@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added — Phase 2, Stage 4: React UI scaffolding + auth screens
-
+- Note: R4S Debian images shipped with mirrors.aliyun.com as the default APT source. Switch to deb.debian.org before running install-stage1.sh to avoid 404 errors from stale mirrors. Documented in docs/development.md if anyone hits this again.
 - **`ui/` directory** — Vite 5 + React 18 + TypeScript 5 SPA with Tailwind CSS 3
   and TanStack React Query v5. Build output at `ui/dist/`.
 - **Vite dev server proxy** — `/api/*` forwarded to
@@ -63,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build output, project structure, SPA routing notes.
 - **`docs/development.md`** — added Node.js to requirements, self-signed cert
   warning walkthrough (per-browser click-through steps).
+
+### Known issue — Stage 4
+
+- Known issue: iPhone Zoomed Display Mode layout clipping deferred to Phase 5 polish (see DESIGN.md §18 accessibility followups)
 
 ### Added — Phase 2, Stage 3: capture↔API IPC + live peer endpoint with SSE
 
