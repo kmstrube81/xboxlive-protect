@@ -34,7 +34,7 @@ export default function Dashboard() {
           </p>
         ) : data ? (
           <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-3">
+            <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2 md:grid-cols-3">
               <div>
                 <dt className="text-slate-500 dark:text-slate-400">Version</dt>
                 <dd className="font-medium text-slate-800 dark:text-slate-100">

@@ -25,18 +25,18 @@ export default function Layout({ children, version, captureStatus }: LayoutProps
   });
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 dark:bg-slate-900">
+    <div className="flex min-h-screen flex-col overflow-x-hidden bg-slate-50 dark:bg-slate-900">
       {/* Top bar */}
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
-          <span className="font-semibold text-slate-800 dark:text-slate-100">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-y-1 px-4 py-3">
+          <span className="min-w-0 font-semibold text-slate-800 dark:text-slate-100">
             xboxlive-protect
           </span>
           <Button
             variant="ghost"
             onClick={() => logoutMutation.mutate()}
             loading={logoutMutation.isPending}
-            className="text-sm"
+            className="shrink-0 text-sm"
           >
             Log out
           </Button>
